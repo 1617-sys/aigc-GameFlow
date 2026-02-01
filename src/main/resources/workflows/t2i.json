@@ -1,0 +1,174 @@
+{
+  "32": {
+    "inputs": {
+      "ckpt_name": "chenkinNoobXL_v01.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Checkpoint加载器（简易）"
+    }
+  },
+  "53": {
+    "inputs": {
+      "width": 896,
+      "height": 1152,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
+    }
+  },
+  "57": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "scale_by": 1.5,
+      "samples": [
+        "98",
+        1
+      ]
+    },
+    "class_type": "LatentUpscaleBy",
+    "_meta": {
+      "title": "缩放Latent（比例）"
+    }
+  },
+  "64": {
+    "inputs": {
+      "filename_prefix": "Java_AIGC",
+      "images": [
+        "176",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "95": {
+    "inputs": {
+      "seed": "${seed}",
+      "steps": 30,
+      "cfg": 4,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 0.75,
+      "basic_pipe": [
+        "98",
+        0
+      ],
+      "latent_image": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "ImpactKSamplerBasicPipe",
+    "_meta": {
+      "title": "KSampler (pipe) - 最终采样"
+    }
+  },
+  "96": {
+    "inputs": {
+      "model": [
+        "32",
+        0
+      ],
+      "clip": [
+        "32",
+        1
+      ],
+      "vae": [
+        "32",
+        2
+      ],
+      "positive": [
+        "438",
+        1
+      ],
+      "negative": [
+        "439",
+        1
+      ]
+    },
+    "class_type": "ToBasicPipe",
+    "_meta": {
+      "title": "ToBasicPipe"
+    }
+  },
+  "98": {
+    "inputs": {
+      "seed": "${seed}",
+      "steps": 30,
+      "cfg": 5.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1,
+      "basic_pipe": [
+        "96",
+        0
+      ],
+      "latent_image": [
+        "53",
+        0
+      ]
+    },
+    "class_type": "ImpactKSamplerBasicPipe",
+    "_meta": {
+      "title": "KSampler (pipe) - 初始采样"
+    }
+  },
+  "176": {
+    "inputs": {
+      "samples": [
+        "95",
+        1
+      ],
+      "vae": [
+        "95",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "438": {
+    "inputs": {
+      "positive": "${prompt}",
+      "auto_random": false,
+      "lora_str": "",
+      "temp_str": "",
+      "temp_lora_str": "",
+      "random_template": "",
+      "打开提示词编辑器": "",
+      "打开Lora堆": "",
+      "opt_clip": [
+        "32",
+        1
+      ]
+    },
+    "class_type": "WeiLinPromptUI",
+    "_meta": {
+      "title": "WeiLin 全能提示词编辑器 (正向)"
+    }
+  },
+  "439": {
+    "inputs": {
+      "positive": "(worst quality, low quality:1.4), bad anatomy, deformed, text, watermark, signature, ugly, distorted face,",
+      "auto_random": false,
+      "temp_str": "",
+      "random_template": "",
+      "打开提示词编辑器": "",
+      "opt_clip": [
+        "32",
+        1
+      ]
+    },
+    "class_type": "WeiLinPromptUIWithoutLora",
+    "_meta": {
+      "title": "WeiLin 提示词编辑器 (负向)"
+    }
+  }
+}

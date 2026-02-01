@@ -1,0 +1,47 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/game_flow?serverTimezone=GMT%2B8
+    username: root
+    password: 161764
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        # 开启手动确认模式 (MANUAL)
+        acknowledge-mode: manual
+        # 每次只预取 1 条消息 (处理完一条再拿下一条，防止累死)
+        prefetch: 1
+
+# LangChain4j / DeepSeek 配置
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: ${DEEPSEEK_API_KEY} # 建议在环境变量中配置，不要写死
+      base-url: https://api.deepseek.com/v1 # DeepSeek API地址
+
+# 自定义 ComfyUI 配置
+comfyui:
+  base-url: http://127.0.0.1:8188
+
+
+mybatis-plus:
+  # 告诉 MP：如果我写了 XML，请去 resources/mapper 目录下找
+  mapper-locations: classpath:mapper/*.xml
+  # 可选：打印 SQL 日志到控制台（开发阶段强烈建议加上，方便调试！）
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+
+# 在 spring 同级或者最下面添加
+minio:
+  endpoint: http://localhost:9000  # API 端口 (不是控制台的9001)
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket-name: aigc
