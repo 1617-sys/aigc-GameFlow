@@ -29,6 +29,8 @@ public class GenTask {
 
     private String errorMsg;
 
+    private String userId;
+
     // 自动填充时间，不需要手写
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

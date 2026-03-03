@@ -41,7 +41,14 @@ public class ComfyUiService {
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             log.info("ComfyUI 响应: {}", response.getBody());
-            return response.getBody();
+            JSONObject jsonObject = JSON.parseObject(response.getBody());
+            if(jsonObject.containsKey("prompt_id")){
+                String cleanPromptId = jsonObject.getString("prompt_id");
+                log.info("提取到的任务ID: {}", cleanPromptId);
+                return cleanPromptId;
+            }
+
+            throw new RuntimeException("ComfyUI 响应异常，未包含 prompt_id");
         } catch (Exception e) {
             log.error("调用 ComfyUI 失败: {}", e.getMessage());
             return null;
@@ -53,6 +60,7 @@ public class ComfyUiService {
 
 
     public String getImageFilename(String promptId) {
+        // 使用字符串拼接而不是模板，确保不会出现未替换的占位符
         String url = comfyUiUrl + "/history/" + promptId;
 
         try {
@@ -78,9 +86,9 @@ public class ComfyUiService {
                 }
             }
         } catch (Exception e){
+            log.error("获取图像文件名失败: {}", e.getMessage());
             e.printStackTrace();
         }
         return null;
     }
 }
-
