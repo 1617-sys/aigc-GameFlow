@@ -1,0 +1,15 @@
+# 测试环境配置
+# Neo4j 配置（需要本地安装 Neo4j 或启动 Docker Desktop）
+spring:
+  neo4j:
+    uri: bolt://localhost:7687
+    authentication:
+      username: neo4j
+      password: 1617647277
+
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: test-key
+      base-url: https://api.deepseek.com/v1
+      model-name: deepseek-chat

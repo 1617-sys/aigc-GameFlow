@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>AIGC 资产生成控制台</title>
+    <!-- 引入 Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Element Plus -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <!-- 引入 Axios -->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <!-- 引入图标 -->
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+
+    <style>
+        /* 赛博朋克深色风格 */
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            gap: 20px;
+        }
+        .panel {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.1);
+        }
+        .left-panel { flex: 1; }
+        .right-panel { flex: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 500px;}
+
+        .cyber-input .el-textarea__inner, .cyber-input .el-input__wrapper {
+            background-color: #0d1117 !important;
+            box-shadow: 0 0 0 1px #30363d inset !important;
+            color: #00ffcc !important;
+        }
+
+        .cyber-btn {
+            width: 100%;
+            background: linear-gradient(45deg, #007acc, #00ffcc);
+            border: none;
+            color: #000;
+            font-weight: bold;
+            margin-top: 20px;
+            height: 40px;
+        }
+        .cyber-btn:hover { opacity: 0.9; }
+
+        .status-tag { margin-top: 10px; font-size: 14px; }
+        .status-0 { color: #8b949e; }
+        .status-1 { color: #e3b341; animation: blink 1s infinite; }
+        .status-2 { color: #00ffcc; }
+        .status-3 { color: #ff7b72; }
+
+        @keyframes blink { 50% { opacity: 0.5; } }
+
+        .image-container img {
+            max-width: 100%;
+            max-height: 600px;
+            border: 2px solid #00ffcc;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
+        }
+        .log-box {
+            margin-top: 20px;
+            background: #000;
+            color: #00ff00;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 150px;
+            overflow-y: auto;
+            border-radius: 4px;
+        }
+
+        /* 登录框样式升级 */
+        .login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 999;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .login-box { width: 320px; padding: 30px; background: #161b22; border: 1px solid #00ffcc; border-radius: 8px; box-shadow: 0 0 20px rgba(0, 255, 204, 0.3); }
+
+        .auth-tabs {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #30363d;
+        }
+        .auth-tab {
+            padding: 10px;
+            cursor: pointer;
+            color: #8b949e;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .auth-tab.active {
+            color: #00ffcc;
+            border-bottom: 2px solid #00ffcc;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <!-- 登录/注册 弹窗 -->
+    <div v-if="!token" class="login-overlay">
+        <div class="login-box">
+            <h2 style="color: #00ffcc; text-align: center; margin-top: 0;">SYSTEM ACCESS</h2>
+
+            <!-- 切换标签 -->
+            <div class="auth-tabs">
+                <div class="auth-tab" :class="{active: !isRegisterMode}" @click="isRegisterMode = false">LOGIN</div>
+                <div class="auth-tab" :class="{active: isRegisterMode}" @click="isRegisterMode = true">REGISTER</div>
+            </div>
+
+            <!-- 登录表单 -->
+            <div v-if="!isRegisterMode">
+                <el-input v-model="loginForm.username" placeholder="Username" class="cyber-input" style="margin-bottom: 15px"></el-input>
+                <el-input v-model="loginForm.password" type="password" placeholder="Password" class="cyber-input" show-password style="margin-bottom: 20px"></el-input>
+                <el-button class="cyber-btn" @click="handleLogin" :loading="loadingAuth">LOGIN</el-button>
+            </div>
+
+            <!-- 注册表单 -->
+            <div v-else>
+                <el-input v-model="registerForm.username" placeholder="New Username" class="cyber-input" style="margin-bottom: 15px"></el-input>
+                <el-input v-model="registerForm.password" type="password" placeholder="Password" class="cyber-input" show-password style="margin-bottom: 15px"></el-input>
+                <el-input v-model="registerForm.confirmPassword" type="password" placeholder="Confirm Password" class="cyber-input" show-password style="margin-bottom: 20px"></el-input>
+                <el-button class="cyber-btn" @click="handleRegister" :loading="loadingAuth">CREATE ACCOUNT</el-button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主界面 (登录后可见) -->
+    <div v-else class="container">
+        <!-- 左侧：控制区 -->
+        <div class="panel left-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #00ffcc;">
+                    <el-icon style="vertical-align: middle"><Monitor /></el-icon> 任务控制台
+                </h3>
+                <el-button size="small" type="danger" plain @click="logout">退出</el-button>
+            </div>
+
+            <div style="margin-bottom: 15px; font-size: 14px;">
+                用户: <span style="color: #00ffcc">{{ currentUser }}</span> |
+                余额: <span style="color: #e3b341">{{ balance }} 积分</span>
+            </div>
+
+            <el-input
+                    v-model="prompt"
+                    type="textarea"
+                    :rows="5"
+                    placeholder="请输入画面描述... (例如：1girl, cyberpunk, neon lights)"
+                    class="cyber-input"
+            ></el-input>
+
+            <el-button class="cyber-btn" @click="submitTask" :disabled="loading">
+                {{ loading ? '生成中...' : '开始生成 (INITIATE)' }}
+            </el-button>
+
+            <!-- 简易日志窗口 -->
+            <div class="log-box" ref="logBox">
+                <div v-for="(log, i) in logs" :key="i">> {{ log }}</div>
+            </div>
+        </div>
+
+        <!-- 右侧：展示区 -->
+        <div class="panel right-panel">
+            <div v-if="!currentTask.imageUrl && !loading" style="color: #555;">
+                [ 等待指令输入... ]
+            </div>
+
+            <!-- 进度状态 -->
+            <div v-if="loading" class="status-tag status-1">
+                ⚡ 正在链接神经网路... (Status: {{ currentTask.status }})
+            </div>
+
+            <!-- 图片展示 -->
+            <div v-if="currentTask.imageUrl" class="image-container">
+                <img :src="currentTask.imageUrl" alt="Generated Image" />
+                <div class="status-tag status-2" style="text-align: center; margin-top: 10px;">
+                    ✅ 资产构建完成
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, nextTick } = Vue;
+    const { ElMessage } = ElementPlus;
+
+    const API_BASE = "http://localhost:8080"; // 后端地址
+
+    createApp({
+        setup() {
+            // === 状态变量 ===
+            const token = ref(localStorage.getItem('aigc_token') || '');
+            const currentUser = ref(localStorage.getItem('aigc_user') || '');
+            const balance = ref(0);
+
+            // 登录注册相关
+            const isRegisterMode = ref(false); // 控制 Tab 切换
+            const loadingAuth = ref(false);
+            const loginForm = reactive({ username: '', password: '' });
+            const registerForm = reactive({ username: '', password: '', confirmPassword: '' });
+
+            // 业务相关
+            const prompt = ref("1girl, white hair, blue eyes, masterpiece, best quality");
+            const loading = ref(false);
+            const logs = ref(["System initialized..."]);
+            const logBox = ref(null);
+
+            const currentTask = reactive({
+                uuid: '',
+                status: -1, // 0:排队, 1:生成, 2:成功, 3:失败
+                imageUrl: ''
+            });
+
+            let pollTimer = null;
+
+            // === 工具函数 ===
+            const addLog = (msg) => {
+                const time = new Date().toLocaleTimeString();
+                logs.value.push(`[${time}] ${msg}`);
+                nextTick(() => {
+                    if(logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight;
+                });
+            };
+
+            // === 1. 注册逻辑 (修复点) ===
+            const handleRegister = async () => {
+                if (!registerForm.username || !registerForm.password) {
+                    ElMessage.error("请输入用户名和密码"); return;
+                }
+                if (registerForm.password !== registerForm.confirmPassword) {
+                    ElMessage.error("两次密码输入不一致"); return;
+                }
+
+                loadingAuth.value = true;
+                try {
+                    const res = await axios.post(`${API_BASE}/user/register`, {
+                        username: registerForm.username,
+                        password: registerForm.password
+                    });
+
+                    if (res.data.code === 200) {
+                        ElMessage.success("注册成功！请登录");
+                        isRegisterMode.value = false; // 切换回登录页
+                        loginForm.username = registerForm.username; // 自动填入
+                        loginForm.password = "";
+                    } else {
+                        ElMessage.error(res.data.msg || "注册失败");
+                    }
+                } catch (e) {
+                    ElMessage.error("请求失败: " + e.message);
+                } finally {
+                    loadingAuth.value = false;
+                }
+            };
+
+            // === 2. 登录逻辑 ===
+            const handleLogin = async () => {
+                if (!loginForm.username || !loginForm.password) {
+                    ElMessage.error("请输入完整信息"); return;
+                }
+
+                loadingAuth.value = true;
+                try {
+                    const res = await axios.post(`${API_BASE}/user/login`, loginForm);
+                    if (res.data.code === 200) {
+                        token.value = res.data.token;
+                        balance.value = res.data.balance;
+                        currentUser.value = loginForm.username;
+
+                        localStorage.setItem('aigc_token', res.data.token);
+                        localStorage.setItem('aigc_user', loginForm.username);
+
+                        addLog("身份验证通过。Access Granted.");
+                        ElMessage.success("登录成功");
+                    } else {
+                        ElMessage.error(res.data.msg || "登录失败");
+                    }
+                } catch (e) {
+                    console.error(e);
+                    ElMessage.error("登录异常，请检查后端服务");
+                } finally {
+                    loadingAuth.value = false;
+                }
+            };
+
+            // === 3. 退出登录 ===
+            const logout = () => {
+                token.value = '';
+                localStorage.removeItem('aigc_token');
+                localStorage.removeItem('aigc_user');
+                ElMessage.info("已退出系统");
+            };
+
+            // === 4. 提交任务 ===
+            const submitTask = async () => {
+                if (!prompt.value) return;
+                loading.value = true;
+                currentTask.imageUrl = '';
+
+                try {
+                    addLog("正在提交生图指令...");
+                    const res = await axios.post(`${API_BASE}/task/submit`,
+                        { prompt: prompt.value },
+                        { headers: { 'Authorization': 'Bearer ' + token.value } }
+                    );
+
+                    if (res.data.code === 200) {
+                        const uuid = res.data.data;
+                        currentTask.uuid = uuid;
+                        balance.value -= 1; // 简单的本地扣费演示，实际以服务端为准
+                        addLog(`任务已进入队列，UUID: ${uuid}`);
+                        startPolling(uuid);
+                    } else {
+                        addLog(`提交被拒绝: ${res.data.msg}`);
+                        ElMessage.warning(res.data.msg);
+                        loading.value = false;
+                    }
+                } catch (e) {
+                    if (e.response && e.response.status === 403) {
+                        addLog("Token失效，请重新登录");
+                        logout();
+                    } else {
+                        addLog(`通信错误: ${e.message}`);
+                    }
+                    loading.value = false;
+                }
+            };
+
+            // === 5. 轮询逻辑 ===
+            const startPolling = (uuid) => {
+                // 清除旧定时器
+                if (pollTimer) clearInterval(pollTimer);
+
+                pollTimer = setInterval(async () => {
+                    try {
+                        const res = await axios.get(`${API_BASE}/task/${uuid}`, {
+                            headers: { 'Authorization': 'Bearer ' + token.value }
+                        });
+
+                        if (res.data.code === 200) {
+                            const task = res.data.data;
+                            currentTask.status = task.status;
+
+                            if (task.status === 1) {
+                                // 避免重复打印刷屏
+                                // addLog("AI 正在构建图像矩阵...");
+                            } else if (task.status === 2) {
+                                addLog("图像构建成功！正在从云端拉取...");
+                                currentTask.imageUrl = task.imageUrl;
+                                stopPolling();
+                            } else if (task.status === 3) {
+                                addLog(`构建失败: ${task.errorMsg}`);
+                                stopPolling();
+                            }
+                        }
+                    } catch (e) {
+                        console.error("轮询出错", e);
+                    }
+                }, 2000); // 2秒查一次
+            };
+
+            const stopPolling = () => {
+                if (pollTimer) clearInterval(pollTimer);
+                loading.value = false;
+            };
+
+            return {
+                token, currentUser, balance,
+                isRegisterMode, loginForm, registerForm, loadingAuth,
+                prompt, loading, logs, logBox, currentTask,
+                handleLogin, handleRegister, logout, submitTask
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>
