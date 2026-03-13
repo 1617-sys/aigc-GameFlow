@@ -7,6 +7,13 @@ spring:
     username: root
     password: 161764
 
+  neo4j:
+    uri: bolt://localhost:7687
+    authentication:
+      username: neo4j
+      password: "12345678"
+
+
   rabbitmq:
     host: localhost
     port: 5672
@@ -58,3 +65,5 @@ minio:
   access-key: minioadmin
   secret-key: minioadmin
   bucket-name: aigc
+
+
