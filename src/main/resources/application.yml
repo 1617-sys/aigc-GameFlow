@@ -30,8 +30,8 @@ spring:
 langchain4j:
   open-ai:
     chat-model:
-      api-key: ${DEEPSEEK_API_KEY} # 建议在环境变量中配置，不要写死
-      base-url: https://api.deepseek.com/v1 # DeepSeek API地址
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: https://api.deepseek.com/v1 # DeepSeek API 地址
       model-name: deepseek-chat
 
 # 自定义 ComfyUI 配置

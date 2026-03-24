@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>AIGC World Builder (Agent Console)</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Consolas', monospace; margin: 0; padding: 20px; }
+        .app-container { display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; height: 90vh; }
+        .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; }
+
+        /* 左侧聊天区 */
+        .chat-panel { flex: 1; border-top-color: #8a2be2; border-top-width: 3px; }
+        .chat-box { flex: 1; overflow-y: auto; margin-bottom: 20px; padding: 10px; background: #010409; border-radius: 6px; }
+        .msg { margin-bottom: 15px; line-height: 1.5; }
+        .msg-user { color: #00ffcc; text-align: right; }
+        .msg-agent { color: #a5d6ff; text-align: left; border-left: 2px solid #8a2be2; padding-left: 10px;}
+        .cyber-input .el-textarea__inner { background: #010409; color: #00ffcc; border: 1px solid #30363d; }
+
+        /* 右侧视觉区 */
+        .vision-panel { flex: 1; border-top-color: #00ffcc; border-top-width: 3px; align-items: center; justify-content: center; position: relative;}
+        .img-display { max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: 0 0 20px rgba(0,255,204,0.1); }
+        .status-text { color: #e3b341; font-weight: bold; animation: pulse 1.5s infinite; }
+
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+
+        /* 登录遮罩 */
+        .login-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 999; display: flex; align-items: center; justify-content: center; }
+        .login-box { width: 300px; background: #161b22; padding: 30px; border: 1px solid #8a2be2; border-radius: 8px; text-align: center;}
+    </style>
+</head>
+<body>
+<div id="app">
+    <!-- 登录模块 -->
+    <div v-if="!token" class="login-mask">
+        <div class="login-box">
+            <h2 style="color: #8a2be2;">SYSTEM LOGIN</h2>
+            <el-input v-model="loginForm.username" placeholder="ID" style="margin-bottom: 15px"></el-input>
+            <el-input v-model="loginForm.password" type="password" placeholder="Password" style="margin-bottom: 20px"></el-input>
+            <el-button color="#8a2be2" style="width: 100%" @click="doLogin" :loading="loading">ACCESS</el-button>
+        </div>
+    </div>
+
+    <!-- 核心工作台 -->
+    <div v-else class="app-container">
+        <!-- 左侧：Agent 交互终端 -->
+        <div class="panel chat-panel">
+            <h3 style="margin-top: 0; color: #8a2be2;">[ TERMINAL ] Agent Console</h3>
+            <div class="chat-box" ref="chatBoxRef">
+                <div v-for="(m, i) in chatHistory" :key="i" :class="m.role === 'user' ? 'msg-user' : 'msg-agent'">
+                    <span style="font-size: 12px; color: #666;">[{{ m.role.toUpperCase() }}]</span><br/>
+                    {{ m.content }}
+                </div>
+                <div v-if="agentThinking" class="msg-agent status-text">>> Agent 正在检索图谱与调度工具...</div>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <el-input v-model="inputText" type="textarea" :rows="3" class="cyber-input" placeholder="输入自然语言指令 (例: 设计一个吸血鬼，存入知识库并生成立绘)"></el-input>
+                <el-button color="#8a2be2" style="height: auto; width: 100px;" @click="sendMsg" :disabled="agentThinking">SEND</el-button>
+            </div>
+        </div>
+
+        <!-- 右侧：多模态视觉监控区 -->
+        <div class="panel vision-panel">
+            <h3 style="position: absolute; top: 20px; left: 20px; margin: 0; color: #00ffcc;">[ VISION ] Render Engine</h3>
+
+            <div v-if="!currentImage && !polling" style="color: #484f58;">[ 等待生图指令... ]</div>
+
+            <div v-if="polling" class="status-text" style="font-size: 20px; display:flex; flex-direction:column; align-items:center;">
+                <el-icon class="is-loading" :size="40" style="margin-bottom: 15px;"><Loading /></el-icon>
+                COMFYUI RENDERING IN PROGRESS...
+                <span style="font-size: 14px; margin-top: 10px; color:#8b949e;">Task ID: {{ activeTaskId }}</span>
+            </div>
+
+            <img v-if="currentImage && !polling" :src="currentImage" class="img-display" />
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, nextTick } = Vue;
+    const API_BASE = "http://localhost:8080";
+
+    createApp({
+        setup() {
+            const token = ref(localStorage.getItem('token') || '');
+            const loginForm = reactive({ username: 'test001', password: '123' });
+            const loading = ref(false);
+
+            // 聊天数据
+            const inputText = ref('');
+            const chatHistory = ref([{ role: 'agent', content: 'System online. GraphRAG engine ready. 请下达指令。' }]);
+            const agentThinking = ref(false);
+            const chatBoxRef = ref(null);
+
+            // 生图数据
+            const activeTaskId = ref('');
+            const polling = ref(false);
+            const currentImage = ref('');
+            let timer = null;
+
+            const scrollToBottom = () => {
+                nextTick(() => {
+                    if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
+                });
+            };
+
+            // 登录
+            const doLogin = async () => {
+                loading.value = true;
+                try {
+                    const res = await axios.post(`${API_BASE}/user/login`, loginForm);
+                    if (res.data.code === 200) {
+                        token.value = res.data.token;
+                        localStorage.setItem('token', token.value);
+                    } else {
+                        alert(res.data.msg);
+                    }
+                } catch (e) { alert("登录失败"); }
+                loading.value = false;
+            };
+
+            // 发送消息给 Agent
+            const sendMsg = async () => {
+                if (!inputText.value.trim()) return;
+                const msg = inputText.value;
+                chatHistory.value.push({ role: 'user', content: msg });
+                inputText.value = '';
+                agentThinking.value = true;
+                scrollToBottom();
+
+                try {
+                    const res = await axios.post(`${API_BASE}/agent/chat`, { message: msg }, {
+                        headers: { 'Authorization': 'Bearer ' + token.value }
+                    });
+
+                    const reply = res.data; // 假设后端直接返回字符串
+                    chatHistory.value.push({ role: 'agent', content: reply });
+
+                    // 🌟 核心魔法：正则提取 UUID
+                    const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+                    const match = reply.match(uuidRegex);
+
+                    if (match) {
+                        activeTaskId.value = match[0];
+                        startPolling(match[0]);
+                    }
+                } catch (e) {
+                    chatHistory.value.push({ role: 'agent', content: '❌ System Error: ' + e.message });
+                    if(e.response?.status === 403) token.value = '';
+                }
+                agentThinking.value = false;
+                scrollToBottom();
+            };
+
+            // 轮询图片生成状态
+            const startPolling = (uuid) => {
+                if (timer) clearInterval(timer);
+                polling.value = true;
+                currentImage.value = '';
+
+                timer = setInterval(async () => {
+                    try {
+                        const res = await axios.get(`${API_BASE}/task/${uuid}`, {
+                            headers: { 'Authorization': 'Bearer ' + token.value }
+                        });
+                        if (res.data.code === 200 && res.data.data) {
+                            const status = res.data.data.status;
+                            if (status === 2) { // 成功出图
+                                currentImage.value = res.data.data.imageUrl;
+                                polling.value = false;
+                                clearInterval(timer);
+                            } else if (status === 3) { // 失败
+                                polling.value = false;
+                                clearInterval(timer);
+                                chatHistory.value.push({ role: 'agent', content: '❌ 渲染引擎报错，生图失败。' });
+                            }
+                        }
+                    } catch (e) { console.error(e); }
+                }, 2000);
+            };
+
+            return { token, loginForm, loading, doLogin, inputText, chatHistory, agentThinking, sendMsg, chatBoxRef, polling, currentImage, activeTaskId };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>
