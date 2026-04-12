@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 @Component
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     // 这些路径不需要 Token，直接放行
@@ -55,26 +57,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 3. 解析 Token
         String token = authHeader.substring(7);
-        System.out.println("=== 调试信息 ===");
-        System.out.println("收集到的纯token：["+token+"]");
-        boolean isValid = JwtUtils.validate(token);
-        System.out.println("Token 验证结果: " + isValid);
-
-        if (JwtUtils.validate(token)) {
-            Long userId = JwtUtils.getUserId(token);
-
-            // 创建 Authentication 对象并设置到 SecurityContext
-            UsernamePasswordAuthenticationToken authentication = 
-                new UsernamePasswordAuthenticationToken(userId, null, null);
-            
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            
-            System.out.println("✅ JWT 验证成功，用户 ID: " + userId);
-        } else {
-            System.out.println("❌ JWT 验证失败");
+        if (!JwtUtils.validate(token)) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "登录已过期或令牌无效");
+            return;
         }
+
+        Long userId = JwtUtils.getUserId(token);
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(userId, null, null);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
 
         chain.doFilter(request, response);
     }

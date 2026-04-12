@@ -1,4 +1,6 @@
 import aigc.gameflow.service.ComfyUiService;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,7 +16,10 @@ public class TestController {
 
     @PostMapping("/comfyui")
     public String testComfyUi(@RequestBody String promptJson) {
-        return comfyUiService.postTask(promptJson);
+        JSONObject json = JSON.parseObject(promptJson);
+        String prompt = json.getString("prompt");
+        long seed = json.getLongValue("seed");
+        return comfyUiService.callPythonFacade(prompt, seed);
     }
 }
 

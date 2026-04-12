@@ -56,11 +56,7 @@ public class SecurityConfig {
 
                 // 4. 配置授权规则
                 .authorizeHttpRequests(auth -> auth
-                        // 👇 【终极绝杀】放行 Spring Boot 内部的 ERROR 转发！(解决 403 的元凶)
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-
-                        // 👇 【强制放行】测试阶段，直接放行聊天接口
-                        .requestMatchers("/agent/chat").permitAll()
 
                         // 放行登录、注册、静态资源
                         .requestMatchers("/user/login", "/user/register").permitAll()

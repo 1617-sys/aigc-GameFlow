@@ -10,6 +10,6 @@ spring:
 langchain4j:
   open-ai:
     chat-model:
-      api-key: test-key
+      api-key: sk-98c48aea1ce24692b2fde4a1226487c8
       base-url: https://api.deepseek.com/v1
       model-name: deepseek-chat

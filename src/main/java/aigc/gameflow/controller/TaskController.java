@@ -1,12 +1,15 @@
 package aigc.gameflow.controller;
 
+import aigc.gameflow.common.ApiResponse;
+import aigc.gameflow.dto.TaskSubmitRequest;
 import aigc.gameflow.model.entity.GenTask;
 import aigc.gameflow.service.TaskService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @RestController
@@ -17,35 +20,30 @@ public class TaskController {
     private TaskService taskService;
 
     @Autowired
-    private RedisTemplate redisTemplate;
+    private RedisTemplate<String, Object> redisTemplate;
 
     @PostMapping("/submit")
-    public String submit(@RequestBody Map<String, String> params) {
-        // 获取前端传来的 "prompt"
-        String prompt = params.get("prompt");
-
-        // 调用 Service 逻辑
-        return taskService.submitTask(prompt);
+    public ApiResponse<String> submit(@Valid @RequestBody TaskSubmitRequest request) {
+        return ApiResponse.success("任务提交成功", taskService.submitTask(request.prompt()));
     }
 
     @GetMapping("/{uuid}")
-    public GenTask getTaskStatus(@PathVariable String uuid) {
-        // 1. 先查 Redis
-        String cacheKey = "task:info:" + uuid;
+    public ApiResponse<GenTask> getTaskStatus(@PathVariable String uuid) {
+        Long currentUserId = taskService.getCurrentUserId();
+        String cacheKey = "task:info:" + currentUserId + ":" + uuid;
         GenTask task = (GenTask) redisTemplate.opsForValue().get(cacheKey);
 
         if (task != null) {
-            return task; // 命中缓存，直接返回，不走数据库
+            return ApiResponse.success(task);
         }
 
-        // 2. 缓存没命中（可能过期了），查数据库
-        task = taskService.getByUuid(uuid); // 需要你在 Service 里写这个简单的查询
+        task = taskService.getCurrentUserTask(uuid);
+        redisTemplate.opsForValue().set(cacheKey, task, 30, TimeUnit.MINUTES);
+        return ApiResponse.success(task);
+    }
 
-        // 3. 回填 Redis (防止缓存穿透)
-        if (task != null) {
-            redisTemplate.opsForValue().set(cacheKey, task, 30, TimeUnit.MINUTES);
-        }
-
-        return task;
+    @GetMapping("/mine")
+    public ApiResponse<List<GenTask>> listMyTasks() {
+        return ApiResponse.success(taskService.listCurrentUserTasks());
     }
 }

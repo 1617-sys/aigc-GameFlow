@@ -199,9 +199,9 @@
                 try {
                     const res = await axios.post(`${API_BASE}/user/login`, loginForm);
                     if (res.data.code === 200) {
-                        token.value = res.data.token;
+                        token.value = res.data.data.token;
                         currentUser.value = loginForm.username;
-                        localStorage.setItem('aigc_token', res.data.token);
+                        localStorage.setItem('aigc_token', res.data.data.token);
                         localStorage.setItem('aigc_user', loginForm.username);
                         ElMessage.success("ACCESS GRANTED");
                     } else {

@@ -25,54 +25,56 @@ public class ComfyUiService {
     @Value("${comfyui.base-url}")
     private String comfyUiUrl;
 
-    public String postTask(String promptJson) {
-        String url = comfyUiUrl + "/prompt";
+    // Java 现在只需要调 Python,不需要解析任何 ComfyUI JSON
+    public String callPythonFacade(String englishPrompt, long seed) {
+        String pythonUrl = comfyUiUrl + "/api/v1/generate";
 
-        // 注意：这里的 HttpHeaders 必须是 org.springframework.http 包下的
+        Map<String, Object> body = new HashMap<>();
+        body.put("prompt", englishPrompt);
+        body.put("seed", seed);
+
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
-        Map<String, Object> requestBody = new HashMap<>();
-        // 使用 fastjson 解析字符串
-        requestBody.put("prompt", JSON.parseObject(promptJson));
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-
-        try {
-            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
-            log.info("ComfyUI 响应: {}", response.getBody());
-            JSONObject jsonObject = JSON.parseObject(response.getBody());
-            if(jsonObject.containsKey("prompt_id")){
-                String cleanPromptId = jsonObject.getString("prompt_id");
-                log.info("提取到的任务ID: {}", cleanPromptId);
-                return cleanPromptId;
-            }
-
-            throw new RuntimeException("ComfyUI 响应异常，未包含 prompt_id");
-        } catch (Exception e) {
-            log.error("调用 ComfyUI 失败: {}", e.getMessage());
-            return null;
-        }
+        ResponseEntity<String> response = restTemplate.postForEntity(pythonUrl, entity, String.class);
+        JSONObject res = JSON.parseObject(response.getBody());
+        return res.getString("prompt_id");
     }
-    // 在 ComfyUiService 里添加
 
+    public String postTask(String promptJson) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> entity = new HttpEntity<>(promptJson, headers);
 
+        ResponseEntity<String> response = restTemplate.postForEntity(comfyUiUrl + "/prompt", entity, String.class);
+        JSONObject result = JSON.parseObject(response.getBody());
+        String promptId = result.getString("prompt_id");
 
+        if (promptId == null || promptId.isBlank()) {
+            throw new RuntimeException("ComfyUI 返回的 prompt_id 为空");
+        }
+
+        return promptId;
+    }
+
+    public String buildImageViewUrl(String filename) {
+        return comfyUiUrl + "/view?filename=" + filename;
+    }
 
     public String getImageFilename(String promptId) {
-        // 使用字符串拼接而不是模板，确保不会出现未替换的占位符
         String url = comfyUiUrl + "/history/" + promptId;
 
         try {
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-            JSONObject json = JSON.parseObject(response.getBody());  // 使用 Fastjson2
-            JSONObject taskData = json.getJSONObject(promptId);  // 直接使用 Fastjson2 的方法
+            JSONObject json = JSON.parseObject(response.getBody());
+            JSONObject taskData = json.getJSONObject(promptId);
 
             if(taskData == null){
                 return null;
             }
 
-            JSONObject outputs = taskData.getJSONObject("outputs");  // 修正：从 taskData 获取
+            JSONObject outputs = taskData.getJSONObject("outputs");
             if(outputs == null){
                 return null;
             }
@@ -87,7 +89,6 @@ public class ComfyUiService {
             }
         } catch (Exception e){
             log.error("获取图像文件名失败: {}", e.getMessage());
-            e.printStackTrace();
         }
         return null;
     }

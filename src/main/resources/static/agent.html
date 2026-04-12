@@ -114,7 +114,7 @@
                 try {
                     const res = await axios.post(`${API_BASE}/user/login`, loginForm);
                     if (res.data.code === 200) {
-                        token.value = res.data.token;
+                        token.value = res.data.data.token;
                         localStorage.setItem('token', token.value);
                     } else {
                         alert(res.data.msg);

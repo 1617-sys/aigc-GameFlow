@@ -2,15 +2,13 @@ package aigc.gameflow.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 @Slf4j
@@ -28,7 +26,7 @@ public class GameAssetService {
 
         String json = readJson("workflows/t2i.json");
 
-        Long randomSeed = Math.abs(new Random().nextLong());
+        long randomSeed = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
 
         String finalJson = json
                 .replace("${prompt}", engPrompt)

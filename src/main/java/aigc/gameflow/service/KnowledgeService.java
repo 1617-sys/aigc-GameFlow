@@ -17,16 +17,17 @@ public class KnowledgeService {
     @Autowired
     private CharacterRepository characterRepository;
 
-    public void saveCharacter(String name,String desc,String race){
+    public void saveCharacter(String name, String race, String desc){
         GameCharacter character = characterRepository.findByName(name);
-        if(character == null){
+        if (character == null) {
             character = new GameCharacter();
-            character.setDesc(desc);
-            character.setRace(race);
             character.setName(name);
-        }else {
-            log.info("角色已存在");
+        } else {
+            log.info("角色已存在，执行更新: {}", name);
         }
+        character.setRace(race);
+        character.setDesc(desc);
+        characterRepository.save(character);
     }
 
     public void addRelationship(String fromName,String toName){
@@ -50,11 +51,13 @@ public class KnowledgeService {
         sb.append("角色名: ").append(character.getName()).append("\n");
         sb.append("种族: ").append(character.getRace()).append("\n");
         sb.append("设定: ").append(character.getDesc()).append("\n");
-        if (!sb.isEmpty()){
+        if (character.getFriends() != null && !character.getFriends().isEmpty()) {
             sb.append("他认识的人有：");
-            for(GameCharacter friend:character.getFriends()){
+            for (GameCharacter friend : character.getFriends()) {
                 sb.append(friend.getName()).append(" ");
             }
+        } else {
+            sb.append("他认识的人有：暂无已知关系");
         }
         return sb.toString();
     }

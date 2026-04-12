@@ -5,7 +5,7 @@ import aigc.gameflow.model.entity.SysUser;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -14,8 +14,9 @@ public class UserService {
     
     @Autowired
     private SysUserMapper sysUserMapper;
-    
-    private BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     /*
     * 注册
@@ -27,7 +28,7 @@ public class UserService {
         Long count = sysUserMapper.selectCount(queryWrapper);
         
         if (count > 0) {
-            throw new RuntimeException("用户名已存在");
+            throw new IllegalArgumentException("用户名已存在");
         }
         
         //2.加密密码
@@ -49,11 +50,11 @@ public class UserService {
         SysUser user = sysUserMapper.selectOne(queryWrapper);
 
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw new IllegalArgumentException("用户不存在");
         }
         
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new RuntimeException("密码错误");
+            throw new IllegalArgumentException("密码错误");
         }
 
         return user;

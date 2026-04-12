@@ -6,7 +6,6 @@ import aigc.gameflow.service.ComfyUiService;
 import aigc.gameflow.service.GameAssetService;
 import aigc.gameflow.service.MinioService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.rabbitmq.client.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
@@ -36,7 +35,7 @@ public class TaskListener {
     private MinioService minioService;
 
     @Autowired
-    private RedisTemplate redisTemplate;
+    private RedisTemplate<String, Object> redisTemplate;
 
     // 监听队列：aigc.task.queue
     @RabbitListener(queues = "aigc.task.queue", ackMode = "MANUAL")
@@ -83,7 +82,7 @@ public class TaskListener {
         // 2. 更新状态：排队中(0) -> 生成中(1)
         task.setStatus(1);
         task.setUpdateTime(LocalDateTime.now());
-        genTaskMapper.updateById(task);
+        updateTaskStatus(task);
 
         // 3. 调用 AI + ComfyUI 发起生图
         String promptId = gameAssetService.generateByText(task.getPrompt());
@@ -102,23 +101,10 @@ public class TaskListener {
                 log.info("✅ ComfyUI 生成完毕，文件名: {}", filename);
 
                 // === 核心搬运逻辑开始 ===
-                try {
-                    // A. 构造 ComfyUI 的下载链接
-                    String downloadUrl = "http://127.0.0.1:8000/view?filename=" + filename;
-
-                    // B. 打开网络流 (这里用 Java 原生 URL 读取最简单)
-                    java.net.URL url = new java.net.URL(downloadUrl);
-                    java.io.InputStream inputStream = url.openStream();
-
-                    // C. 传给 MinIO，拿到永久链接
+                try (java.io.InputStream inputStream =
+                             new java.net.URL(comfyUiService.buildImageViewUrl(filename)).openStream()) {
                     String minioUrl = minioService.uploadImage(inputStream, filename);
-
-                    // D. 记得关闭流！(虽然 MinIO SDK 可能会关，但手动关是个好习惯)
-                    inputStream.close();
-
-                    // E. 存入数据库
                     task.setImageUrl(minioUrl); // 存入 MinIO 的链接
-
                 } catch (Exception e) {
                     log.error("图片搬运失败", e);
                     throw new RuntimeException("图片上传 MinIO 失败");
@@ -139,8 +125,7 @@ public class TaskListener {
             // 更新数据库 -> 成功(2)
             task.setStatus(2);
             task.setUpdateTime(LocalDateTime.now());
-            // 注意：这里不要再 setImageUrl 了，因为上面循环里已经 set 过了
-            genTaskMapper.updateById(task);
+            updateTaskStatus(task);
             log.info("🎉 任务数据库状态更新完成");
         } else {
             // 超时处理
@@ -150,22 +135,31 @@ public class TaskListener {
 
     // 辅助方法：更新状态
     private void updateTaskStatus(String uuid, int status, String msg) {
-        GenTask task = GenTask.builder()
-                .status(status)
-                .errorMsg(msg)
-                .build();
-        genTaskMapper.update(task,new LambdaUpdateWrapper<GenTask>().eq(GenTask::getTaskUuid,uuid));
+        GenTask task = genTaskMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<GenTask>()
+                        .eq("task_uuid", uuid)
+        );
+
+        if (task == null) {
+            genTaskMapper.update(
+                    GenTask.builder().status(status).errorMsg(msg).build(),
+                    new LambdaUpdateWrapper<GenTask>().eq(GenTask::getTaskUuid, uuid)
+            );
+            return;
+        }
+
+        task.setStatus(status);
+        task.setErrorMsg(msg);
+        task.setUpdateTime(LocalDateTime.now());
+        updateTaskStatus(task);
     }
 
     // 在 TaskListener.java 中注入 RedisTemplate
 
     private void updateTaskStatus(GenTask task) {
-        // 1. 更新数据库 (持久化兜底)
         genTaskMapper.updateById(task);
 
-        // 2. 更新 Redis (热数据)
-        // Key: task:status:{uuid}  过期时间: 30分钟 (任务完成后没必要一直存Redis)
-        String cacheKey = "task:info:" + task.getTaskUuid();
+        String cacheKey = "task:info:" + task.getUserId() + ":" + task.getTaskUuid();
         redisTemplate.opsForValue().set(cacheKey, task, 30, TimeUnit.MINUTES);
     }
 }

@@ -1,12 +1,16 @@
 package aigc.gameflow.model.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @TableName("gen_task")
 public class GenTask {
 
@@ -29,7 +33,7 @@ public class GenTask {
 
     private String errorMsg;
 
-    private String userId;
+    private Long userId;
 
     // 自动填充时间，不需要手写
     @TableField(fill = FieldFill.INSERT)

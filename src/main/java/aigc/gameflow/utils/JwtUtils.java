@@ -29,7 +29,18 @@ public class JwtUtils {
      */
     public static boolean validate(String token) {
         try {
-            return JWTUtil.verify(token, KEY);
+            if (!JWTUtil.verify(token, KEY)) {
+                return false;
+            }
+
+            JWT jwt = JWTUtil.parseToken(token);
+            Object expireTime = jwt.getPayload("expire_time");
+            if (expireTime == null) {
+                return false;
+            }
+
+            long expireTimestamp = Long.parseLong(expireTime.toString());
+            return expireTimestamp > System.currentTimeMillis();
         } catch (Exception e) {
             return false;
         }
