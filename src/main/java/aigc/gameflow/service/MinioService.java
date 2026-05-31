@@ -1,9 +1,10 @@
 package aigc.gameflow.service;
 
+import io.minio.BucketExistsArgs;
+import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -14,8 +15,7 @@ import java.util.UUID;
 @Service
 public class MinioService {
 
-    @Autowired
-    private MinioClient minioClient;
+    private final MinioClient minioClient;
 
     @Value("${minio.bucket-name}")
     private String bucketName;
@@ -23,33 +23,47 @@ public class MinioService {
     @Value("${minio.endpoint}")
     private String endpoint;
 
-    /**
-     * @param inputStream 图片的输入流
-     * @param originalFilename 原始文件名 (例如 ComfyUI_001.png)
-     * @return 图片的 HTTP 访问链接
-    * */
-    public String uploadImage(InputStream inputStream, String originalFilename){
-        try{
-            String suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
-            String filename = UUID.randomUUID().toString() + suffix;
+    public MinioService(MinioClient minioClient) {
+        this.minioClient = minioClient;
+    }
+
+    public String uploadImage(InputStream inputStream, String originalFilename) {
+        try {
+            ensureBucket();
+            String suffix = resolveSuffix(originalFilename);
+            String filename = UUID.randomUUID() + suffix;
 
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(bucketName)
                             .object(filename)
-                            .stream(inputStream, -1, 10485760) // 10MB 分片
-                            .contentType("image/png") // 显式指定类型，否则浏览器打开会变成下载
+                            .stream(inputStream, -1, 10 * 1024 * 1024)
+                            .contentType("image/png")
                             .build()
             );
 
-
-
             String url = endpoint + "/" + bucketName + "/" + filename;
-            log.info("图片上传 MinIO 成功: {}", url);
+            log.info("Image uploaded to MinIO: {}", url);
             return url;
         } catch (Exception e) {
-            log.error("MinIO 上传失败", e);
-            throw new RuntimeException("图片上传服务异常");
+            log.error("MinIO upload failed", e);
+            throw new RuntimeException("Image upload service failed");
         }
+    }
+
+    private void ensureBucket() throws Exception {
+        boolean exists = minioClient.bucketExists(
+                BucketExistsArgs.builder().bucket(bucketName).build()
+        );
+        if (!exists) {
+            minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+        }
+    }
+
+    private String resolveSuffix(String originalFilename) {
+        if (originalFilename == null || !originalFilename.contains(".")) {
+            return ".png";
+        }
+        return originalFilename.substring(originalFilename.lastIndexOf("."));
     }
 }

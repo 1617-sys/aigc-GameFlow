@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:game_flow}?serverTimezone=GMT%2B8&useUnicode=true&characterEncoding=utf8
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+
+  neo4j:
+    uri: ${NEO4J_URI:bolt://neo4j:7687}
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+
+generation:
+  default-provider: ${DEFAULT_IMAGE_PROVIDER:OPENAI}
+
+comfyui:
+  base-url: ${COMFYUI_BASE_URL:http://host.docker.internal:8000}
