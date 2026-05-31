@@ -1,284 +1,323 @@
-# AIGC GameFlow
+# AIGC-GameFlow Engine
 
-一个面向游戏世界观构建与资产生成的 AI Native Java 后端项目。
+面向游戏 AI 工作流的多平台图像生成执行引擎。
 
-这个项目适合作为大三到大四阶段的实习 Demo，重点不在“炫技式多 Agent”，而在于把 `用户鉴权 -> 异步任务 -> AI 提示词优化 -> 图像生成 -> 资产存储 -> 知识图谱查询` 这一整条后端链路串起来。
+这个项目不是一个简单的“文生图 Demo”，而是一个用于承接上游 Agent 工作流的后端执行服务。它负责接收游戏策划、角色设定、素材生成 Prompt 等请求，通过 RabbitMQ 异步执行生图任务，并将结果统一存储到 MinIO，同时提供任务查询、事件追踪、失败回调、重试与取消能力。
+
+项目可以单独作为 AIGC 后端服务运行，也可以作为 `GameDev Agent Workbench` 的下游生成引擎使用。
 
 ## 项目定位
 
-- 面向岗位：`Java 后端`、`后端开发`、`AI 应用开发`、`Agent 应用开发`
-- 业务场景：游戏角色设定、世界观知识沉淀、AIGC 资产生成
-- 核心卖点：不是单纯的文生图页面，而是一个带 `Agent + 图谱 + 异步任务` 的后端系统原型
+- 面向场景：小游戏素材生成、角色设定图生成、AI 工具流后端、Agent 工作流下游执行
+- 面向岗位：Java 后端开发、AI 应用开发、AIGC 工具链开发、Agent 应用开发
+- 核心目标：把 `用户鉴权 -> 任务提交 -> 消息队列 -> 多平台生图 -> 对象存储 -> 状态追踪 -> 上游回调` 串成可落地的后端链路
 
-## 核心能力
+## 核心功能
 
-- 用户注册、登录、JWT 鉴权
-- 基于 LangChain4j 的 Agent 对话与工具调用
-- 基于 RabbitMQ 的异步任务提交与消费
-- 基于 Redis 的限流与任务缓存
-- 基于 Neo4j 的角色知识图谱查询
-- 基于 ComfyUI 的图像生成链路
-- 基于 MinIO 的图片资产持久化
-- 支持 SSE 流式聊天输出
+- 用户注册、登录与 JWT 鉴权
+- 统一图像生成任务接口：`/api/generation/jobs`
+- 支持 OpenAI Image API 与 ComfyUI 两类生图平台
+- 支持按策略选择生图 Provider：`AUTO`、`LOCAL_FIRST`、`QUALITY_FIRST`、`COST_FIRST`
+- 基于 RabbitMQ 的异步任务消费，避免长耗时生成阻塞 HTTP 请求
+- 基于 Redis 的提交限流与任务状态缓存
+- 基于 MySQL 的任务状态、用户余额和事件记录持久化
+- 基于 MinIO 的图片结果统一存储
+- 基于 Neo4j 的游戏角色知识图谱能力
+- 基于 LangChain4j 的游戏世界观 Agent 对话能力
+- 支持任务事件追踪、失败原因记录、任务重试、任务取消和上游回调
+- 支持 Docker Compose 一键启动本地完整环境
 
 ## 技术栈
 
-### 后端
-
-- Java 21
-- Spring Boot 3.3.4
-- Spring Security
-- MyBatis-Plus
-- LangChain4j
-- Hutool JWT
-
-### 中间件与存储
-
-- MySQL
-- Redis
-- RabbitMQ
-- Neo4j
-- MinIO
-
-### AI 与生成侧
-
-- DeepSeek API
-- ComfyUI
-
-### 前端
-
-- Vue 3
-- Element Plus
-- Axios
+| 分类 | 技术 |
+| --- | --- |
+| 后端语言 | Java 21 |
+| 后端框架 | Spring Boot 3, Spring MVC, Spring Security |
+| 数据访问 | MyBatis-Plus |
+| 数据库 | MySQL |
+| 缓存 | Redis |
+| 消息队列 | RabbitMQ |
+| 对象存储 | MinIO |
+| 图数据库 | Neo4j |
+| AI 应用 | LangChain4j, Tool Calling, Prompt Workflow |
+| 生图平台 | OpenAI Image API, ComfyUI |
+| 部署 | Docker, Docker Compose |
 
 ## 系统架构
 
-```text
-Browser / Frontend
-        |
-        v
-UserController / AgentController / TaskController
-        |
-        +--> Spring Security + JWT
-        |
-        +--> GameMasterAgent
-        |         |
-        |         +--> GameAgentTools
-        |                    |
-        |                    +--> KnowledgeService -> Neo4j
-        |                    |
-        |                    +--> TaskService
-        |
-        +--> TaskService -> MySQL
-                     |
-                     +--> Redis (限流 / 状态缓存)
-                     |
-                     +--> RabbitMQ
-                               |
-                               v
-                         TaskListener
-                               |
-                               +--> AiPromptService
-                               |
-                               +--> ComfyUiService
-                               |
-                               +--> MinioService -> MinIO
+```mermaid
+flowchart TD
+    A["Frontend / Agent Workbench"] --> B["Spring Boot API"]
+    B --> C["Spring Security + JWT"]
+    C --> D["GenerationController"]
+    D --> E["TaskService"]
+    E --> F["MySQL: gen_task"]
+    E --> G["Redis: limit/cache"]
+    E --> H["RabbitMQ: aigc.task.queue"]
+    H --> I["TaskListener"]
+    I --> J["ImageGenerationService"]
+    J --> K["ImageGenerationRouter"]
+    K --> L["OpenAI Image Provider"]
+    K --> M["ComfyUI Provider"]
+    L --> N["MinIO"]
+    M --> N["MinIO"]
+    I --> O["generation_event trace"]
+    I --> P["CallbackService"]
+    P --> A
 ```
 
-## 核心流程
+## 用户请求处理链路
 
-### 1. 自然语言对话生成图片
+用户或上游 Agent 工作流提交生图任务后，系统不会同步等待图片生成完成，而是立即返回 `taskUuid` 和 `traceId`，后续由 RabbitMQ 消费者异步处理。
 
-1. 用户向 `/agent/chat` 或 `/agent/chat/stream` 发送自然语言请求
-2. `GameMasterAgent` 识别用户意图
-3. 如果命中画图意图，触发 `drawImage` 工具
-4. `TaskService` 创建任务、写库、限流、投递 RabbitMQ
-5. `TaskListener` 消费任务并调用 AI 提示词优化与 ComfyUI
-6. 生成结果上传 MinIO，并把任务状态更新回 MySQL / Redis
-7. 前端轮询 `/task/{uuid}` 获取最终结果
+```mermaid
+sequenceDiagram
+    participant U as User / Agent Workbench
+    participant API as GenerationController
+    participant S as TaskService
+    participant MQ as RabbitMQ
+    participant C as TaskListener
+    participant R as ImageGenerationRouter
+    participant P as OpenAI / ComfyUI
+    participant M as MinIO
+    participant DB as MySQL
+    participant CB as CallbackService
 
-### 2. 角色设定查询与沉淀
+    U->>API: POST /api/generation/jobs
+    API->>S: submitGenerationJob(request)
+    S->>DB: insert gen_task(PENDING)
+    S->>DB: insert event(TASK_CREATED)
+    S->>MQ: send taskUuid
+    S-->>API: taskUuid + traceId
+    API-->>U: submitted
 
-1. 用户在 Agent 对话中询问角色设定
-2. Agent 调用 `queryLore`
-3. `KnowledgeService` 从 Neo4j 查询角色节点和关系
-4. 如果是新角色设定，Agent 可调用 `saveLore` 进行保存
+    MQ->>C: consume taskUuid
+    C->>DB: update RUNNING
+    C->>R: route provider
+    R->>P: generate image
+    P-->>R: image url/base64
+    R->>M: store image
+    C->>DB: update SUCCESS / FAILED
+    C->>DB: insert generation_event
+    C->>CB: notify callbackUrl if provided
+    CB-->>U: push generation result
+```
 
-## 模块说明
+## 任务状态与事件追踪
 
-| 模块 | 说明 |
+生成任务主状态保存在 `gen_task` 表，关键过程记录在 `generation_event` 表。
+
+常见事件包括：
+
+| 事件 | 含义 |
 | --- | --- |
-| `controller` | 对外接口层，包含用户、任务、Agent 相关接口 |
-| `service` | 业务服务层，负责任务、AI、知识图谱、对象存储等逻辑 |
-| `mq` | 异步任务监听与消费 |
-| `mapper` | MyBatis-Plus 数据访问层 |
-| `repository` | Neo4j 图谱访问层 |
-| `model.entity` | MySQL 实体 |
-| `model.graph` | Neo4j 图节点实体 |
-| `resources/workflows` | ComfyUI 工作流模板 |
-| `resources/static` | 演示前端页面 |
+| `TASK_CREATED` | 任务已创建 |
+| `TASK_QUEUED` | 任务已投递到 RabbitMQ |
+| `TASK_RUNNING` | 消费者开始处理任务 |
+| `PROVIDER_SELECTED` | 已选择 OpenAI 或 ComfyUI |
+| `PROVIDER_REQUEST_SENT` | 已向生图平台发送请求 |
+| `IMAGE_STORED` | 图片已存储到 MinIO |
+| `TASK_SUCCESS` | 任务成功 |
+| `TASK_FAILED` | 任务失败 |
+| `CALLBACK_SENT` | 已回调上游系统 |
+| `CALLBACK_FAILED` | 回调上游失败 |
+| `TASK_CANCELED` | 任务被取消 |
+| `TASK_RETRY_REQUESTED` | 用户请求重试 |
+
+通过 `traceId` 和事件表可以定位任务失败发生在哪一步，例如 Provider 调用失败、MinIO 上传失败或回调失败。
 
 ## 目录结构
 
 ```text
-src/
-  main/
-    java/aigc/gameflow/
-      config/
-      controller/
-      mapper/
-      model/
-      mq/
-      repository/
-      service/
-      utils/
-    resources/
-      static/
-      workflows/
-      application.yml
-      schema.sql
-  test/
-    java/
-    resources/
+src/main/java/aigc/gameflow
+  config/              # Spring、Redis、RabbitMQ、MinIO、安全配置
+  controller/          # REST API
+  dto/                 # 请求与响应对象
+  image/               # 多平台生图抽象与路由
+  mapper/              # MyBatis-Plus Mapper
+  model/entity/        # MySQL 实体
+  model/graph/         # Neo4j 图节点
+  mq/                  # RabbitMQ 消费者
+  repository/          # Neo4j Repository
+  service/             # 核心业务服务
+  utils/               # JWT 等工具
+src/main/resources
+  static/              # 简单演示页面
+  workflows/           # ComfyUI 工作流模板
+  application.yml
+  application-docker.yml
+  schema.sql
 ```
 
-## 运行前准备
+## 快速启动
 
-本项目依赖较多，建议提前准备以下环境：
+### 方式一：Docker Compose 完整启动
 
-- JDK 21
-- MySQL
-- Redis
-- RabbitMQ
-- Neo4j
-- MinIO
-- ComfyUI
-- DeepSeek API Key
-
-## 配置说明
-
-### 1. 数据库
-
-执行 `src/main/resources/schema.sql` 初始化 MySQL 表结构。
-
-### 2. 应用配置
-
-主要配置位于 `src/main/resources/application.yml`：
-
-- MySQL 连接
-- Neo4j 连接
-- RabbitMQ 连接
-- Redis 连接
-- MinIO 连接
-- DeepSeek API
-- ComfyUI 地址
-
-### 3. API Key
-
-推荐用环境变量注入：
+适合本地演示或快速部署整套环境。
 
 ```powershell
-$env:DEEPSEEK_API_KEY="your-api-key"
-.\mvnw.cmd spring-boot:run
+copy .env.template .env
+docker compose up -d --build
 ```
 
-也可以参考仓库内的 `QUICKSTART.txt` 与 `.env.template`。
+启动后访问：
 
-## 启动步骤
+| 服务 | 地址 |
+| --- | --- |
+| 后端服务 | `http://localhost:8080` |
+| RabbitMQ 管理台 | `http://localhost:15672` |
+| MinIO 控制台 | `http://localhost:9001` |
+| Neo4j Browser | `http://localhost:7474` |
 
-### Windows
+默认账号：
+
+```text
+RabbitMQ: guest / guest
+MinIO: minioadmin / minioadmin
+Neo4j: neo4j / 12345678
+```
+
+### 方式二：开发调试模式
+
+适合日常开发。中间件使用 Docker，Java 服务在 IDEA 中启动。
 
 ```powershell
-.\mvnw.cmd spring-boot:run
+copy .env.template .env
+docker compose up -d mysql redis rabbitmq minio neo4j
 ```
 
-### 使用启动脚本
+然后在 IDEA 中运行 Spring Boot 主类。
 
-```cmd
-start.bat
+## 环境变量
+
+配置模板见 [.env.template](.env.template)。
+
+核心配置：
+
+```env
+MYSQL_HOST=mysql
+REDIS_HOST=redis
+RABBITMQ_HOST=rabbitmq
+MINIO_ENDPOINT=http://minio:9000
+NEO4J_URI=bolt://neo4j:7687
+
+DEFAULT_IMAGE_PROVIDER=OPENAI
+OPENAI_API_KEY=sk-your-openai-api-key
+OPENAI_IMAGE_MODEL=gpt-image-1
+
+COMFYUI_BASE_URL=http://host.docker.internal:8000
+DEEPSEEK_API_KEY=sk-your-deepseek-api-key
+```
+
+如果使用本机 ComfyUI，推荐让 ComfyUI 运行在宿主机，Java 容器通过下面地址访问：
+
+```env
+COMFYUI_BASE_URL=http://host.docker.internal:8000
 ```
 
 ## 主要接口
 
 ### 用户接口
 
-- `POST /user/register`
-- `POST /user/login`
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/user/register` | 用户注册 |
+| `POST` | `/user/login` | 用户登录，返回 JWT |
 
 ### Agent 接口
 
-- `POST /agent/chat`
-- `POST /agent/chat/stream`
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/agent/chat` | 普通 Agent 对话 |
+| `POST` | `/agent/chat/stream` | SSE 流式 Agent 对话 |
 
-### 任务接口
+### 图像生成接口
 
-- `POST /task/submit`
-- `GET /task/{uuid}`
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/generation/jobs` | 提交生图任务 |
+| `GET` | `/api/generation/jobs` | 查询当前用户任务列表 |
+| `GET` | `/api/generation/jobs/{taskUuid}` | 查询任务详情 |
+| `GET` | `/api/generation/jobs/{taskUuid}/events` | 查询任务事件链路 |
+| `POST` | `/api/generation/jobs/{taskUuid}/retry` | 重试任务 |
+| `POST` | `/api/generation/jobs/{taskUuid}/cancel` | 取消任务 |
+| `GET` | `/api/generation/providers` | 查询可用 Provider |
 
-## Demo 展示建议
+### 提交生图任务示例
 
-建议按下面顺序演示：
+```http
+POST /api/generation/jobs
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+```
 
-1. 登录系统
-2. 在 Agent 界面输入自然语言需求
-3. 展示流式回复
-4. 捕获任务 UUID 并进入任务轮询
-5. 展示生成结果图片
-6. 补充说明任务是如何经过 RabbitMQ、Redis、MinIO、Neo4j 的
+```json
+{
+  "prompt": "一名赛博朋克风格的小游戏主角，像素风，蓝色外套",
+  "negativePrompt": "low quality, blurry",
+  "preferredProvider": "OPENAI",
+  "model": "gpt-image-1",
+  "size": "1024x1024",
+  "quality": "auto",
+  "sourceApp": "gamedev-agent-workbench",
+  "externalRunId": "workflow-run-001",
+  "callbackUrl": "http://host.docker.internal:8081/api/callbacks/generation"
+}
+```
 
-## 简历可写亮点
+响应示例：
 
-你可以从以下角度描述这个项目：
+```json
+{
+  "code": 200,
+  "message": "generation job submitted",
+  "data": {
+    "taskUuid": "7a9d4b2c-xxxx-xxxx-xxxx-6e9f1d2c3b4a",
+    "status": "PENDING",
+    "provider": "OPENAI",
+    "traceId": "3b52d5d1-xxxx-xxxx-xxxx-9d91aa0b2b7d"
+  }
+}
+```
 
-### 版本 A：偏 Java 后端
+## 与 Agent 工作台的关系
 
-- 基于 Spring Boot 搭建 AIGC 异步任务平台，整合 JWT、Redis、RabbitMQ、MySQL、MinIO，实现任务提交、鉴权、缓存、异步消费与结果存储
-- 设计图像生成任务链路，通过消息队列解耦请求入口与耗时生成流程，支持任务状态查询与结果持久化
-- 使用 Neo4j 管理角色设定与关系图谱，为 Agent 场景提供知识查询能力
+推荐组合展示方式：
 
-### 版本 B：偏 Agent / AI 应用
+```text
+GameDev Agent Workbench
+  负责：需求拆解、游戏概念生成、核心循环设计、Prompt 生成、Workflow 记录
 
-- 基于 LangChain4j 构建游戏世界观 Agent，支持自然语言对话、工具调用、角色知识查询与图片生成任务编排
-- 接入 DeepSeek 与 ComfyUI，实现从自然语言需求到提示词优化、工作流生成、图片产出的完整 AI 应用链路
-- 结合 Neo4j 图谱与任务系统，探索 Agent 在游戏设定生成和资产生产中的落地方式
+AIGC-GameFlow Engine
+  负责：接收 Prompt、选择生图平台、异步执行任务、存储图片、回调结果
+```
 
-### 版本 C：折中版
+两者组合后形成完整链路：
 
-- 实现了一个面向游戏世界观构建的 AI Native 后端系统，整合 Agent 对话、知识图谱、异步任务和 AIGC 图片生成能力
+```text
+小游戏需求
+-> Agent 拆解与 Prompt 生成
+-> AIGC-GameFlow Engine 提交生图任务
+-> RabbitMQ 异步执行
+-> OpenAI / ComfyUI 生图
+-> MinIO 存储结果
+-> 回调上游 Workflow
+-> 用户查看最终素材
+```
 
-## 当前适合继续打磨的方向
-
-如果项目目标是“用于实习投递”，优先级建议如下：
-
-1. 修复当前分支中 ComfyUI 调用接口未对齐的问题
-2. 统一接口返回体与异常处理
-3. 绑定任务与用户归属关系，补权限校验
-4. 增加任务列表、失败原因、重试能力
-5. 补测试、README、接口说明和演示材料
-
-## 配套文档
+## 项目文档
 
 - [项目链路图](docs/ARCHITECTURE_FLOW.md)
 - [升级方案](docs/PROJECT_UPGRADE_PLAN.md)
 - [升级实现说明](docs/PROJECT_UPGRADE_IMPLEMENTATION.md)
 - [简历项目描述](docs/RESUME_PROJECT_DESC.md)
 
-## 已知工程化改进点
+## 开发计划
 
-当前仓库仍有一些适合继续完善的地方：
+- 接入更多图片生成平台，统一 Provider 能力描述
+- 增加任务失败自动重试和死信队列
+- 增加 OpenAPI / Apifox 接口文档
+- 增加基础单元测试与集成测试
+- 增加前端任务看板，展示任务状态和事件时间线
+- 与 `GameDev Agent Workbench` 完成更完整的端到端联动演示
 
-- `GameAssetService` 与 `ComfyUiService` 的调用接口需要对齐
-- `TaskController` 返回结构与前端轮询逻辑需要统一
-- 任务归属与用户权限控制还可以继续补强
-- `KnowledgeService` 的保存链路需要进一步收口和校验
-- 配置文件中的敏感信息建议完全迁移到环境变量
-
-## 为什么这个项目适合当实习 Demo
-
-因为它同时满足了三件事：
-
-- 有真实后端工程要素，不只是页面拼装
-- 有 AI 亮点，但没有脱离业务场景
-- 讲得清楚业务闭环，适合中小厂技术面试展开追问
-
-如果你后续想往 `Agent 开发` 走，这个项目也可以继续演进，但更建议以“会做 AI 落地的 Java 后端”作为当前求职定位。
