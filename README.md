@@ -258,10 +258,10 @@ start.bat
 
 ## 配套文档
 
-- [项目链路图](/F:/coe/java/AIGC-GameFlow/docs/ARCHITECTURE_FLOW.md)
-- [简历项目描述](/F:/coe/java/AIGC-GameFlow/docs/RESUME_PROJECT_DESC.md)
-- [面试准备清单](/F:/coe/java/AIGC-GameFlow/docs/INTERVIEW_PREP.md)
-- [广州投递策略](/F:/coe/java/AIGC-GameFlow/docs/GUANGZHOU_STRATEGY.md)
+- [项目链路图](docs/ARCHITECTURE_FLOW.md)
+- [升级方案](docs/PROJECT_UPGRADE_PLAN.md)
+- [升级实现说明](docs/PROJECT_UPGRADE_IMPLEMENTATION.md)
+- [简历项目描述](docs/RESUME_PROJECT_DESC.md)
 
 ## 已知工程化改进点
 
