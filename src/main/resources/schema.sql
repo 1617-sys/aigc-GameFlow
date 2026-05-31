@@ -46,3 +46,35 @@ ON DUPLICATE KEY UPDATE username=username;
 -- 验证数据
 SELECT * FROM sys_user;
 SELECT * FROM gen_task;
+
+-- Upgrade fields for multi-provider image generation engine.
+ALTER TABLE `gen_task`
+  ADD COLUMN `negative_prompt` varchar(1000) DEFAULT NULL COMMENT 'Negative prompt',
+  ADD COLUMN `provider` varchar(32) DEFAULT NULL COMMENT 'Image provider',
+  ADD COLUMN `model` varchar(100) DEFAULT NULL COMMENT 'Provider model',
+  ADD COLUMN `size` varchar(32) DEFAULT NULL COMMENT 'Image size',
+  ADD COLUMN `quality` varchar(32) DEFAULT NULL COMMENT 'Image quality',
+  ADD COLUMN `provider_job_id` varchar(128) DEFAULT NULL COMMENT 'Provider job id',
+  ADD COLUMN `source_app` varchar(100) DEFAULT NULL COMMENT 'Source application',
+  ADD COLUMN `external_run_id` varchar(128) DEFAULT NULL COMMENT 'Upstream workflow run id',
+  ADD COLUMN `callback_url` varchar(500) DEFAULT NULL COMMENT 'Callback URL',
+  ADD COLUMN `callback_status` varchar(32) DEFAULT NULL COMMENT 'Callback status',
+  ADD COLUMN `callback_error` varchar(500) DEFAULT NULL COMMENT 'Callback error',
+  ADD COLUMN `latency_ms` bigint DEFAULT NULL COMMENT 'Generation latency in milliseconds',
+  ADD COLUMN `trace_id` varchar(64) DEFAULT NULL COMMENT 'Trace id';
+
+CREATE INDEX `idx_external_run_id` ON `gen_task` (`external_run_id`);
+CREATE INDEX `idx_trace_id` ON `gen_task` (`trace_id`);
+
+CREATE TABLE IF NOT EXISTS `generation_event` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'Event ID',
+  `task_uuid` varchar(64) NOT NULL COMMENT 'Task UUID',
+  `trace_id` varchar(64) DEFAULT NULL COMMENT 'Trace ID',
+  `event_type` varchar(64) NOT NULL COMMENT 'Event type',
+  `message` varchar(500) DEFAULT NULL COMMENT 'Event message',
+  `payload` text COMMENT 'Event payload JSON',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+  PRIMARY KEY (`id`),
+  KEY `idx_task_uuid` (`task_uuid`),
+  KEY `idx_event_trace_id` (`trace_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Generation event trace table';

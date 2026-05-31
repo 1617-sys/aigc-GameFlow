@@ -1,0 +1,16 @@
+package aigc.gameflow.image;
+
+public enum GenerationEventType {
+    TASK_CREATED,
+    TASK_QUEUED,
+    TASK_RUNNING,
+    TASK_CANCELED,
+    TASK_RETRY_REQUESTED,
+    PROVIDER_SELECTED,
+    PROVIDER_REQUEST_SENT,
+    IMAGE_STORED,
+    CALLBACK_SENT,
+    CALLBACK_FAILED,
+    TASK_SUCCESS,
+    TASK_FAILED
+}
