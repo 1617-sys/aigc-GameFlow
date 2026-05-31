@@ -10,7 +10,6 @@ import org.apache.ibatis.annotations.Mapper;
 // 3. 必须继承 BaseMapper<你操作的实体类>
 public interface GenTaskMapper extends BaseMapper<GenTask> {
 
-    // 惊喜吗？这里一行代码都不用写！
     // BaseMapper 已经帮你写好了 insert, delete, update, select...
 
 }
