@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
@@ -37,6 +38,7 @@ public class GenerationEventService {
                     .eventType(type.name())
                     .message(message)
                     .payload(payload == null ? null : JSON.toJSONString(payload))
+                    .createTime(LocalDateTime.now())
                     .build());
         } catch (Exception e) {
             log.warn("Failed to record generation event, taskUuid={}, eventType={}, error={}",

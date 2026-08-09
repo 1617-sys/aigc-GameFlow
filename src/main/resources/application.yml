@@ -1,27 +1,39 @@
 server:
   port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:200}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:20}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:500}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:8192}
 
 spring:
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:game_flow}?serverTimezone=GMT%2B8&useUnicode=true&characterEncoding=utf8
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:root}
-
-  neo4j:
-    uri: ${NEO4J_URI:bolt://localhost:7687}
-    authentication:
-      username: ${NEO4J_USERNAME:neo4j}
-      password: ${NEO4J_PASSWORD:12345678}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:1000}
+      validation-timeout: ${DB_POOL_VALIDATION_TIMEOUT_MS:1000}
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
     listener:
       simple:
         acknowledge-mode: manual
-        prefetch: 1
+        concurrency: ${RABBITMQ_CONCURRENCY:4}
+        max-concurrency: ${RABBITMQ_MAX_CONCURRENCY:16}
+        prefetch: ${RABBITMQ_PREFETCH:20}
 
   data:
     redis:
@@ -32,30 +44,50 @@ spring:
       timeout: 3000ms
       lettuce:
         pool:
-          max-active: 8
-          max-wait: -1ms
-
-langchain4j:
-  open-ai:
-    chat-model:
-      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
-      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
-      model-name: ${DEEPSEEK_MODEL:deepseek-chat}
+          max-active: ${REDIS_POOL_MAX_ACTIVE:32}
+          max-idle: ${REDIS_POOL_MAX_IDLE:16}
+          min-idle: ${REDIS_POOL_MIN_IDLE:4}
+          max-wait: ${REDIS_POOL_MAX_WAIT_MS:500ms}
 
 generation:
-  default-provider: ${DEFAULT_IMAGE_PROVIDER:COMFYUI}
-  openai:
-    api-key: ${OPENAI_API_KEY:}
-    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
-    image-model: ${OPENAI_IMAGE_MODEL:gpt-image-1}
+  default-provider: ${DEFAULT_IMAGE_PROVIDER:MOCK}
+  rate-limit:
+    user-per-second: ${SUBMIT_USER_RATE_LIMIT:5}
+    global-per-second: ${SUBMIT_GLOBAL_RATE_LIMIT:300}
+  retry:
+    max-attempts: ${GENERATION_MAX_RETRIES:3}
+  outbox:
+    relay-enabled: ${OUTBOX_RELAY_ENABLED:true}
+    batch-size: ${OUTBOX_BATCH_SIZE:50}
+    lock-seconds: ${OUTBOX_LOCK_SECONDS:30}
+    confirm-timeout-seconds: ${OUTBOX_CONFIRM_TIMEOUT_SECONDS:5}
+    max-backoff-seconds: ${OUTBOX_MAX_BACKOFF_SECONDS:300}
+    fixed-delay-ms: ${OUTBOX_RELAY_FIXED_DELAY_MS:500}
+  lease:
+    duration-seconds: ${TASK_LEASE_DURATION_SECONDS:60}
+    heartbeat-seconds: ${TASK_LEASE_HEARTBEAT_SECONDS:20}
+    heartbeat-threads: ${TASK_LEASE_HEARTBEAT_THREADS:2}
+    recovery-enabled: ${TASK_LEASE_RECOVERY_ENABLED:true}
+    recovery-batch-size: ${TASK_LEASE_RECOVERY_BATCH_SIZE:50}
+    recovery-fixed-delay-ms: ${TASK_LEASE_RECOVERY_FIXED_DELAY_MS:10000}
+  backpressure:
+    enabled: ${QUEUE_BACKPRESSURE_ENABLED:true}
+    max-backlog: ${QUEUE_MAX_BACKLOG:5000}
+    refresh-ms: ${QUEUE_BACKLOG_REFRESH_MS:1000}
+  mock:
+    enabled: ${GENERATION_MOCK_ENABLED:true}
+    delay-ms: ${GENERATION_MOCK_DELAY_MS:1000}
+    failure-rate: ${GENERATION_MOCK_FAILURE_RATE:0}
+  wanx:
+    api-key: ${DASHSCOPE_API_KEY:}
+    base-url: ${WANX_BASE_URL:https://dashscope.aliyuncs.com/api/v1}
+    image-model: ${WANX_IMAGE_MODEL:wanx-v1}
 
 comfyui:
   base-url: ${COMFYUI_BASE_URL:http://127.0.0.1:8000}
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
-  configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

@@ -22,12 +22,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String[] WHITELIST = {
             "/user/login",
             "/user/register",
-            "/",
-            "/index.html",
-            "/*.html",
-            "/*.css",
-            "/*.js",
-            "/favicon.ico",
             "/doc.html",
             "/webjars/**",
             "/v3/api-docs/**"

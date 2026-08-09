@@ -1,6 +1,7 @@
 package aigc.gameflow.service;
 
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -9,6 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
 import java.util.UUID;
 
 @Slf4j
@@ -48,6 +51,30 @@ public class MinioService {
         } catch (Exception e) {
             log.error("MinIO upload failed", e);
             throw new RuntimeException("Image upload service failed");
+        }
+    }
+
+    public void streamImage(String imageUrl, OutputStream outputStream) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            throw new IllegalArgumentException("Task has no generated image");
+        }
+        try {
+            String path = URI.create(imageUrl).getPath();
+            String bucketPrefix = "/" + bucketName + "/";
+            if (path == null || !path.startsWith(bucketPrefix)) {
+                throw new IllegalArgumentException("Invalid stored image URL");
+            }
+            String objectName = path.substring(bucketPrefix.length());
+            try (InputStream inputStream = minioClient.getObject(
+                    GetObjectArgs.builder().bucket(bucketName).object(objectName).build()
+            )) {
+                inputStream.transferTo(outputStream);
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("MinIO image read failed, imageUrl={}", imageUrl, e);
+            throw new IllegalStateException("Image read service failed");
         }
     }
 

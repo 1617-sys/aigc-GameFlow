@@ -58,9 +58,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
 
-                        // 放行登录、注册、静态资源
+                        // 放行登录和注册
                         .requestMatchers("/user/login", "/user/register").permitAll()
-                        .requestMatchers("/", "/index.html", "/*.html", "/*.css", "/*.js", "/favicon.ico").permitAll()
 
                         // 其余所有请求必须认证
                         .anyRequest().authenticated()
