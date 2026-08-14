@@ -1,25 +1,32 @@
 package aigc.gameflow.mq;
 
-import aigc.gameflow.image.GenerationStatus;
+import aigc.gameflow.config.RabbitConfig;
 import aigc.gameflow.image.GenerationEventType;
+import aigc.gameflow.image.GenerationStatus;
 import aigc.gameflow.image.ImageGenerationResult;
 import aigc.gameflow.mapper.GenTaskMapper;
 import aigc.gameflow.model.entity.GenTask;
 import aigc.gameflow.service.CallbackService;
 import aigc.gameflow.service.GenerationEventService;
 import aigc.gameflow.service.ImageGenerationService;
+import aigc.gameflow.service.TaskCacheService;
+import aigc.gameflow.service.TaskLeaseService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.rabbitmq.client.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Component
 @Slf4j
@@ -29,121 +36,190 @@ public class TaskListener {
     private final ImageGenerationService imageGenerationService;
     private final CallbackService callbackService;
     private final GenerationEventService generationEventService;
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final TaskCacheService taskCacheService;
+    private final TaskLeaseService taskLeaseService;
+    private final RabbitTemplate rabbitTemplate;
+    private final int maxRetries;
 
     public TaskListener(
             GenTaskMapper genTaskMapper,
             ImageGenerationService imageGenerationService,
             CallbackService callbackService,
             GenerationEventService generationEventService,
-            RedisTemplate<String, Object> redisTemplate
+            TaskCacheService taskCacheService,
+            TaskLeaseService taskLeaseService,
+            RabbitTemplate rabbitTemplate,
+            @Value("${generation.retry.max-attempts:3}") int maxRetries
     ) {
         this.genTaskMapper = genTaskMapper;
         this.imageGenerationService = imageGenerationService;
         this.callbackService = callbackService;
         this.generationEventService = generationEventService;
-        this.redisTemplate = redisTemplate;
+        this.taskCacheService = taskCacheService;
+        this.taskLeaseService = taskLeaseService;
+        this.rabbitTemplate = rabbitTemplate;
+        this.maxRetries = maxRetries;
     }
 
-    @RabbitListener(queues = "aigc.task.queue", ackMode = "MANUAL")
+    @RabbitListener(queues = RabbitConfig.TASK_QUEUE, ackMode = "MANUAL")
     public void onMessage(Message message, Channel channel) throws IOException {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
-        String taskUuid = new String(message.getBody());
-        log.info("Received generation task, taskUuid={}", taskUuid);
+        String taskUuid = new String(message.getBody(), StandardCharsets.UTF_8);
+        String workerId = UUID.randomUUID().toString();
 
         try {
-            processTask(taskUuid);
+            processTask(taskUuid, workerId);
             channel.basicAck(deliveryTag, false);
-            log.info("Generation task acked, taskUuid={}", taskUuid);
         } catch (Exception e) {
-            log.error("Generation task failed, taskUuid={}, error={}", taskUuid, e.getMessage(), e);
-            GenTask failedTask = updateTaskStatus(taskUuid, GenerationStatus.FAILED, e.getMessage());
-            if (failedTask != null) {
-                generationEventService.record(failedTask, GenerationEventType.TASK_FAILED, e.getMessage());
-                callbackService.notifyIfNeeded(failedTask);
+            GenTask runningTask = findTask(taskUuid);
+            int databaseRetries = runningTask == null || runningTask.getRetryCount() == null
+                    ? 0
+                    : runningTask.getRetryCount();
+            int retries = Math.max(retryCount(message), databaseRetries);
+            String error = truncate(e.getMessage());
+            log.error("Generation task failed, taskUuid={}, retry={}, error={}",
+                    taskUuid, retries, error, e);
+
+            if (retries < maxRetries) {
+                GenTask retrying = transitionFromRunning(
+                        taskUuid,
+                        workerId,
+                        GenerationStatus.RETRYING,
+                        error,
+                        retries + 1
+                );
+                if (retrying == null) {
+                    channel.basicAck(deliveryTag, false);
+                    return;
+                }
+                generationEventService.record(retrying, GenerationEventType.TASK_RETRY_SCHEDULED,
+                        "Retry " + (retries + 1) + " scheduled after provider failure");
+                channel.basicNack(deliveryTag, false, false);
+                return;
             }
-            channel.basicNack(deliveryTag, false, false);
+
+            GenTask failed = transitionFromRunning(
+                    taskUuid,
+                    workerId,
+                    GenerationStatus.FAILED,
+                    error,
+                    retries
+            );
+            if (failed == null) {
+                channel.basicAck(deliveryTag, false);
+                return;
+            }
+            generationEventService.record(failed, GenerationEventType.TASK_FAILED, error);
+            generationEventService.record(failed, GenerationEventType.TASK_DEAD_LETTERED,
+                    "Retry limit exceeded; message moved to DLQ");
+            callbackService.notifyIfNeeded(failed);
+            message.getMessageProperties().setHeader("finalError", error);
+            rabbitTemplate.send(RabbitConfig.DLX_EXCHANGE, RabbitConfig.DLQ_ROUTING_KEY, message);
+            channel.basicAck(deliveryTag, false);
         }
     }
 
-    private void processTask(String taskUuid) {
-        GenTask task = genTaskMapper.selectOne(
-                new QueryWrapper<GenTask>().eq("task_uuid", taskUuid)
-        );
+    private void processTask(String taskUuid, String workerId) {
+        if (!taskLeaseService.claim(taskUuid, workerId)) {
+            log.info("Task message skipped because task was already claimed or completed, taskUuid={}", taskUuid);
+            return;
+        }
 
+        GenTask task = findTask(taskUuid);
         if (task == null) {
-            log.warn("Generation task not found, taskUuid={}", taskUuid);
-            return;
+            throw new IllegalStateException("Generation task not found after claim");
         }
-
-        if (GenerationStatus.SUCCESS.code() == safeStatus(task)) {
-            log.info("Generation task already completed, taskUuid={}", taskUuid);
-            return;
-        }
-
-        if (GenerationStatus.CANCELED.code() == safeStatus(task)) {
-            generationEventService.record(task, GenerationEventType.TASK_CANCELED, "Canceled task skipped by consumer");
-            log.info("Generation task canceled before running, taskUuid={}", taskUuid);
-            return;
-        }
-
-        task.setStatus(GenerationStatus.RUNNING.code());
-        task.setUpdateTime(LocalDateTime.now());
-        updateTaskStatus(task);
+        cacheTask(task);
         generationEventService.record(task, GenerationEventType.TASK_RUNNING, "Generation task started");
 
-        ImageGenerationResult result = imageGenerationService.generateAndStore(task);
+        ImageGenerationResult result;
+        try (TaskLeaseService.LeaseHeartbeat ignored = taskLeaseService.startHeartbeat(taskUuid, workerId)) {
+            result = imageGenerationService.generateAndStore(task);
+        }
 
-        GenTask latest = genTaskMapper.selectOne(new QueryWrapper<GenTask>().eq("task_uuid", taskUuid));
-        if (latest != null && GenerationStatus.CANCELED.code() == safeStatus(latest)) {
-            generationEventService.record(latest, GenerationEventType.TASK_CANCELED, "Generation result ignored because task was canceled");
+        int completed = genTaskMapper.update(
+                null,
+                new LambdaUpdateWrapper<GenTask>()
+                        .set(GenTask::getStatus, GenerationStatus.SUCCESS.code())
+                        .set(GenTask::getImageUrl, result.getRemoteImageUrl())
+                        .set(GenTask::getProvider, result.getProvider().name())
+                        .set(GenTask::getModel, result.getModel())
+                        .set(GenTask::getProviderJobId, result.getProviderJobId())
+                        .set(GenTask::getLatencyMs, result.getLatencyMs())
+                        .set(GenTask::getErrorMsg, null)
+                        .set(GenTask::getWorkerId, null)
+                        .set(GenTask::getLeaseExpireTime, null)
+                        .set(GenTask::getLastHeartbeatTime, null)
+                        .set(GenTask::getUpdateTime, LocalDateTime.now())
+                        .setSql("version = version + 1")
+                        .eq(GenTask::getTaskUuid, taskUuid)
+                        .eq(GenTask::getStatus, GenerationStatus.RUNNING.code())
+                        .eq(GenTask::getWorkerId, workerId)
+                        .gt(GenTask::getLeaseExpireTime, LocalDateTime.now())
+        );
+        GenTask latest = findTask(taskUuid);
+        if (completed != 1) {
+            generationEventService.record(latest, GenerationEventType.TASK_RESULT_IGNORED,
+                    "Late generation result ignored because task ownership or status changed");
+            cacheTask(latest);
             return;
         }
 
-        task.setStatus(GenerationStatus.SUCCESS.code());
-        task.setImageUrl(result.getRemoteImageUrl());
-        task.setProvider(result.getProvider().name());
-        task.setModel(result.getModel());
-        task.setProviderJobId(result.getProviderJobId());
-        task.setLatencyMs(result.getLatencyMs());
-        task.setErrorMsg(null);
-        task.setUpdateTime(LocalDateTime.now());
-        updateTaskStatus(task);
-        generationEventService.record(task, GenerationEventType.TASK_SUCCESS, "Generation task completed", result);
-        callbackService.notifyIfNeeded(task);
+        cacheTask(latest);
+        generationEventService.record(latest, GenerationEventType.TASK_SUCCESS,
+                "Generation task completed", result);
+        callbackService.notifyIfNeeded(latest);
     }
 
-    private GenTask updateTaskStatus(String uuid, GenerationStatus status, String msg) {
-        GenTask task = genTaskMapper.selectOne(
-                new QueryWrapper<GenTask>().eq("task_uuid", uuid)
+    private GenTask transitionFromRunning(
+            String taskUuid,
+            String workerId,
+            GenerationStatus target,
+            String error,
+            int retries
+    ) {
+        int updated = genTaskMapper.transitionOwnedStatus(
+                taskUuid,
+                workerId,
+                GenerationStatus.RUNNING.code(),
+                target.code(),
+                error,
+                retries
         );
-
-        if (task == null) {
-            genTaskMapper.update(
-                    GenTask.builder()
-                            .status(status.code())
-                            .errorMsg(msg)
-                            .updateTime(LocalDateTime.now())
-                            .build(),
-                    new LambdaUpdateWrapper<GenTask>().eq(GenTask::getTaskUuid, uuid)
-            );
+        if (updated != 1) {
+            log.info("Task failure result ignored because status changed, taskUuid={}", taskUuid);
             return null;
         }
-
-        task.setStatus(status.code());
-        task.setErrorMsg(msg);
-        task.setUpdateTime(LocalDateTime.now());
-        updateTaskStatus(task);
+        GenTask task = findTask(taskUuid);
+        cacheTask(task);
         return task;
     }
 
-    private void updateTaskStatus(GenTask task) {
-        genTaskMapper.updateById(task);
-        String cacheKey = "task:info:" + task.getUserId() + ":" + task.getTaskUuid();
-        redisTemplate.opsForValue().set(cacheKey, task, 30, TimeUnit.MINUTES);
+    private int retryCount(Message message) {
+        List<Map<String, ?>> deaths = message.getMessageProperties().getXDeathHeader();
+        if (deaths == null) {
+            return 0;
+        }
+        return deaths.stream()
+                .filter(entry -> RabbitConfig.TASK_QUEUE.equals(entry.get("queue")))
+                .map(entry -> entry.get("count"))
+                .filter(Number.class::isInstance)
+                .map(Number.class::cast)
+                .mapToInt(Number::intValue)
+                .max()
+                .orElse(0);
     }
 
-    private int safeStatus(GenTask task) {
-        return task.getStatus() == null ? GenerationStatus.PENDING.code() : task.getStatus();
+    private GenTask findTask(String taskUuid) {
+        return genTaskMapper.selectOne(new QueryWrapper<GenTask>().eq("task_uuid", taskUuid));
+    }
+
+    private void cacheTask(GenTask task) {
+        taskCacheService.put(task);
+    }
+
+    private String truncate(String value) {
+        String message = value == null ? "Unknown generation error" : value;
+        return message.length() <= 500 ? message : message.substring(0, 500);
     }
 }

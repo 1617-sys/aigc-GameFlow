@@ -1,80 +1,93 @@
--- 创建数据库（如果不存在）
 CREATE DATABASE IF NOT EXISTS game_flow DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
 USE game_flow;
 
--- 创建用户表
-CREATE TABLE IF NOT EXISTS `sys_user` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '用户 ID',
-  `username` varchar(50) NOT NULL COMMENT '用户名',
-  `password` varchar(255) NOT NULL COMMENT '密码 (加密)',
-  `balance` int(11) DEFAULT '10' COMMENT '余额/积分',
-  `role` varchar(20) DEFAULT 'USER' COMMENT '角色：USER, ADMIN',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  `is_deleted` tinyint(1) DEFAULT '0' COMMENT '逻辑删除：0-未删除，1-已删除',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_username` (`username`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户表';
+CREATE TABLE IF NOT EXISTS sys_user (
+  id bigint NOT NULL AUTO_INCREMENT,
+  username varchar(50) NOT NULL,
+  password varchar(255) NOT NULL,
+  balance int NOT NULL DEFAULT 10,
+  role varchar(20) NOT NULL DEFAULT 'USER',
+  create_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  update_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  is_deleted tinyint NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 创建生成任务表
-CREATE TABLE IF NOT EXISTS `gen_task` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '任务 ID',
-  `task_uuid` varchar(64) NOT NULL COMMENT '任务 UUID',
-  `prompt` varchar(1000) DEFAULT NULL COMMENT '中文提示词',
-  `prompt_en` varchar(2000) DEFAULT NULL COMMENT '英文提示词',
-  `status` tinyint(4) DEFAULT '0' COMMENT '状态：0-排队，1-生成中，2-成功，3-失败',
-  `image_url` varchar(500) DEFAULT NULL COMMENT '图片 URL',
-  `parameters` text COMMENT 'JSON 参数',
-  `error_msg` varchar(500) DEFAULT NULL COMMENT '错误消息',
-  `user_id` bigint(20) DEFAULT NULL COMMENT '用户 ID',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  `is_deleted` tinyint(1) DEFAULT '0' COMMENT '逻辑删除：0-未删除，1-已删除',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_task_uuid` (`task_uuid`),
-  KEY `idx_user_id` (`user_id`),
-  KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生成任务表';
+CREATE TABLE IF NOT EXISTS gen_task (
+  id bigint NOT NULL AUTO_INCREMENT,
+  task_uuid varchar(64) NOT NULL,
+  idempotency_key varchar(128) NOT NULL,
+  request_hash varchar(64) NOT NULL,
+  version int NOT NULL DEFAULT 0,
+  retry_count int NOT NULL DEFAULT 0,
+  worker_id varchar(64) DEFAULT NULL,
+  lease_expire_time datetime DEFAULT NULL,
+  last_heartbeat_time datetime DEFAULT NULL,
+  prompt varchar(2000) NOT NULL,
+  prompt_en varchar(2000) DEFAULT NULL,
+  negative_prompt varchar(1000) DEFAULT NULL,
+  status tinyint NOT NULL DEFAULT 0,
+  provider varchar(32) DEFAULT NULL,
+  model varchar(100) DEFAULT NULL,
+  size varchar(32) DEFAULT NULL,
+  quality varchar(32) DEFAULT NULL,
+  provider_job_id varchar(128) DEFAULT NULL,
+  image_url varchar(500) DEFAULT NULL,
+  parameters text,
+  error_msg varchar(500) DEFAULT NULL,
+  user_id bigint NOT NULL,
+  source_app varchar(100) DEFAULT NULL,
+  external_run_id varchar(128) DEFAULT NULL,
+  callback_url varchar(500) DEFAULT NULL,
+  callback_status varchar(32) DEFAULT NULL,
+  callback_error varchar(500) DEFAULT NULL,
+  latency_ms bigint DEFAULT NULL,
+  trace_id varchar(64) NOT NULL,
+  create_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  update_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  is_deleted tinyint NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_task_uuid (task_uuid),
+  UNIQUE KEY uk_user_idempotency (user_id, idempotency_key),
+  KEY idx_user_create_time (user_id, create_time DESC),
+  KEY idx_status_update_time (status, update_time),
+  KEY idx_status_lease_expire (status, lease_expire_time),
+  KEY idx_trace_id (trace_id),
+  KEY idx_external_run_id (external_run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 插入测试用户（密码是 123456，使用 BCrypt 加密）
--- 注意：BCrypt 每次加密结果不同，这里是示例
-INSERT INTO `sys_user` (`username`, `password`, `balance`, `role`) 
-VALUES ('test', '$2a$10$N.zmdr9k7uOQoYvOz5.F4OKJqRJOm0m4hL0.vGj5xJxWlZzJ5Z5Z5', 100, 'USER')
-ON DUPLICATE KEY UPDATE username=username;
+CREATE TABLE IF NOT EXISTS generation_outbox (
+  id bigint NOT NULL AUTO_INCREMENT,
+  event_id varchar(64) NOT NULL,
+  task_uuid varchar(64) NOT NULL,
+  trace_id varchar(64) DEFAULT NULL,
+  event_type varchar(64) NOT NULL,
+  payload text,
+  status varchar(20) NOT NULL DEFAULT 'PENDING',
+  retry_count int NOT NULL DEFAULT 0,
+  next_attempt_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  locked_by varchar(64) DEFAULT NULL,
+  locked_until datetime DEFAULT NULL,
+  last_error varchar(500) DEFAULT NULL,
+  create_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sent_time datetime DEFAULT NULL,
+  update_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_outbox_event_id (event_id),
+  KEY idx_outbox_dispatch (status, next_attempt_time),
+  KEY idx_outbox_task_uuid (task_uuid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 验证数据
-SELECT * FROM sys_user;
-SELECT * FROM gen_task;
-
--- Upgrade fields for multi-provider image generation engine.
-ALTER TABLE `gen_task`
-  ADD COLUMN `negative_prompt` varchar(1000) DEFAULT NULL COMMENT 'Negative prompt',
-  ADD COLUMN `provider` varchar(32) DEFAULT NULL COMMENT 'Image provider',
-  ADD COLUMN `model` varchar(100) DEFAULT NULL COMMENT 'Provider model',
-  ADD COLUMN `size` varchar(32) DEFAULT NULL COMMENT 'Image size',
-  ADD COLUMN `quality` varchar(32) DEFAULT NULL COMMENT 'Image quality',
-  ADD COLUMN `provider_job_id` varchar(128) DEFAULT NULL COMMENT 'Provider job id',
-  ADD COLUMN `source_app` varchar(100) DEFAULT NULL COMMENT 'Source application',
-  ADD COLUMN `external_run_id` varchar(128) DEFAULT NULL COMMENT 'Upstream workflow run id',
-  ADD COLUMN `callback_url` varchar(500) DEFAULT NULL COMMENT 'Callback URL',
-  ADD COLUMN `callback_status` varchar(32) DEFAULT NULL COMMENT 'Callback status',
-  ADD COLUMN `callback_error` varchar(500) DEFAULT NULL COMMENT 'Callback error',
-  ADD COLUMN `latency_ms` bigint DEFAULT NULL COMMENT 'Generation latency in milliseconds',
-  ADD COLUMN `trace_id` varchar(64) DEFAULT NULL COMMENT 'Trace id';
-
-CREATE INDEX `idx_external_run_id` ON `gen_task` (`external_run_id`);
-CREATE INDEX `idx_trace_id` ON `gen_task` (`trace_id`);
-
-CREATE TABLE IF NOT EXISTS `generation_event` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'Event ID',
-  `task_uuid` varchar(64) NOT NULL COMMENT 'Task UUID',
-  `trace_id` varchar(64) DEFAULT NULL COMMENT 'Trace ID',
-  `event_type` varchar(64) NOT NULL COMMENT 'Event type',
-  `message` varchar(500) DEFAULT NULL COMMENT 'Event message',
-  `payload` text COMMENT 'Event payload JSON',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
-  PRIMARY KEY (`id`),
-  KEY `idx_task_uuid` (`task_uuid`),
-  KEY `idx_event_trace_id` (`trace_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Generation event trace table';
+CREATE TABLE IF NOT EXISTS generation_event (
+  id bigint NOT NULL AUTO_INCREMENT,
+  task_uuid varchar(64) NOT NULL,
+  trace_id varchar(64) DEFAULT NULL,
+  event_type varchar(64) NOT NULL,
+  message varchar(500) DEFAULT NULL,
+  payload text,
+  create_time datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_task_create_time (task_uuid, create_time),
+  KEY idx_event_trace_id (trace_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

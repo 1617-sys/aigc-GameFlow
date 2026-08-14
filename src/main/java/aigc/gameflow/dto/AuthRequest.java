@@ -4,11 +4,11 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record AuthRequest(
-        @NotBlank(message = "用户名不能为空")
-        @Size(max = 50, message = "用户名长度不能超过 50")
+        @NotBlank(message = "username must not be blank")
+        @Size(max = 50, message = "username must be at most 50 characters")
         String username,
-        @NotBlank(message = "密码不能为空")
-        @Size(min = 3, max = 50, message = "密码长度需要在 3 到 50 个字符之间")
+        @NotBlank(message = "password must not be blank")
+        @Size(min = 3, max = 50, message = "password must contain 3 to 50 characters")
         String password
 ) {
 }

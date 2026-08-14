@@ -1,7 +1,6 @@
 package aigc.gameflow.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
@@ -14,22 +13,21 @@ import java.util.concurrent.ThreadLocalRandom;
 @Slf4j
 public class GameAssetService {
 
-    @Autowired
-    private ComfyUiService comfyUiService;
-    @Autowired
-    private AiPromptService aiPromptService;
+    private final ComfyUiService comfyUiService;
+
+    public GameAssetService(ComfyUiService comfyUiService) {
+        this.comfyUiService = comfyUiService;
+    }
+
     public String generateByText(String prompt) {
-        log.info("正在请求 AI 优化提示词...");
-        String engPrompt = aiPromptService.optimize(prompt);
-        log.info("AI 优化结果: {}", engPrompt);
-        engPrompt = engPrompt.replace("\r","").replace("\n","");
+        String normalizedPrompt = prompt.replace("\r", " ").replace("\n", " ").trim();
 
         String json = readJson("workflows/t2i.json");
 
         long randomSeed = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
 
         String finalJson = json
-                .replace("${prompt}", engPrompt)
+                .replace("${prompt}", normalizedPrompt)
                 .replace("\"${seed}\"", String.valueOf(randomSeed)) // 兼容 seed 是字符串的情况
                 .replace("${seed}", String.valueOf(randomSeed));
 

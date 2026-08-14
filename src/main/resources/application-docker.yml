@@ -9,14 +9,11 @@ spring:
     redis:
       host: ${REDIS_HOST:redis}
 
-  neo4j:
-    uri: ${NEO4J_URI:bolt://neo4j:7687}
-
 minio:
   endpoint: ${MINIO_ENDPOINT:http://minio:9000}
 
 generation:
-  default-provider: ${DEFAULT_IMAGE_PROVIDER:OPENAI}
+  default-provider: ${DEFAULT_IMAGE_PROVIDER:MOCK}
 
 comfyui:
   base-url: ${COMFYUI_BASE_URL:http://host.docker.internal:8000}

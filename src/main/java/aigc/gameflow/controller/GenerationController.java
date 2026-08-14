@@ -3,11 +3,13 @@ package aigc.gameflow.controller;
 import aigc.gameflow.common.ApiResponse;
 import aigc.gameflow.dto.GenerationSubmitRequest;
 import aigc.gameflow.dto.GenerationSubmitResponse;
+import aigc.gameflow.dto.TaskStatusBatchRequest;
 import aigc.gameflow.image.GenerationStatus;
 import aigc.gameflow.image.ImageGenerationRouter;
 import aigc.gameflow.model.entity.GenTask;
 import aigc.gameflow.model.entity.GenerationEvent;
 import aigc.gameflow.service.GenerationEventService;
+import aigc.gameflow.service.MinioService;
 import aigc.gameflow.service.TaskService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,7 +17,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.List;
 
@@ -26,20 +33,26 @@ public class GenerationController {
     private final TaskService taskService;
     private final ImageGenerationRouter imageGenerationRouter;
     private final GenerationEventService generationEventService;
+    private final MinioService minioService;
 
     public GenerationController(
             TaskService taskService,
             ImageGenerationRouter imageGenerationRouter,
-            GenerationEventService generationEventService
+            GenerationEventService generationEventService,
+            MinioService minioService
     ) {
         this.taskService = taskService;
         this.imageGenerationRouter = imageGenerationRouter;
         this.generationEventService = generationEventService;
+        this.minioService = minioService;
     }
 
     @PostMapping("/jobs")
-    public ApiResponse<GenerationSubmitResponse> submitJob(@Valid @RequestBody GenerationSubmitRequest request) {
-        String taskUuid = taskService.submitGenerationJob(request);
+    public ApiResponse<GenerationSubmitResponse> submitJob(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody GenerationSubmitRequest request
+    ) {
+        String taskUuid = taskService.submitGenerationJob(request, idempotencyKey);
         GenTask task = taskService.getCurrentUserTask(taskUuid);
         return ApiResponse.success("generation job submitted", GenerationSubmitResponse.builder()
                 .taskUuid(taskUuid)
@@ -54,6 +67,16 @@ public class GenerationController {
         return ApiResponse.success(taskService.getCurrentUserTask(taskUuid));
     }
 
+    @GetMapping(value = "/jobs/{taskUuid}/image", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<StreamingResponseBody> getJobImage(@PathVariable String taskUuid) {
+        GenTask task = taskService.getCurrentUserTask(taskUuid);
+        StreamingResponseBody body = outputStream -> minioService.streamImage(task.getImageUrl(), outputStream);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noCache())
+                .contentType(MediaType.IMAGE_PNG)
+                .body(body);
+    }
+
     @GetMapping("/jobs/{taskUuid}/events")
     public ApiResponse<List<GenerationEvent>> listJobEvents(@PathVariable String taskUuid) {
         taskService.getCurrentUserTask(taskUuid);
@@ -63,6 +86,11 @@ public class GenerationController {
     @GetMapping("/jobs")
     public ApiResponse<List<GenTask>> listJobs() {
         return ApiResponse.success(taskService.listCurrentUserTasks());
+    }
+
+    @PostMapping("/jobs/statuses")
+    public ApiResponse<List<GenTask>> getJobStatuses(@Valid @RequestBody TaskStatusBatchRequest request) {
+        return ApiResponse.success(taskService.getCurrentUserTasks(request.taskUuids()));
     }
 
     @PostMapping("/jobs/{taskUuid}/retry")

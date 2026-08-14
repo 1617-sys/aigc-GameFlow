@@ -31,7 +31,7 @@ public class ImageGenerationRouter {
             return findSupported(ProviderType.COMFYUI, request);
         }
         if (policy == ProviderPolicy.QUALITY_FIRST) {
-            return findSupported(ProviderType.OPENAI, request);
+            return findSupported(ProviderType.WANX, request);
         }
 
         return findSupported(defaultProvider, request);

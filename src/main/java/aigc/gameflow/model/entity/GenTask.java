@@ -24,6 +24,13 @@ public class GenTask {
     private Long id;
 
     private String taskUuid;
+    private String idempotencyKey;
+    private String requestHash;
+    private Integer version;
+    private Integer retryCount;
+    private String workerId;
+    private LocalDateTime leaseExpireTime;
+    private LocalDateTime lastHeartbeatTime;
 
     private String prompt;
     private String promptEn;

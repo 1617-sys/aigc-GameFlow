@@ -40,3 +40,13 @@ build/
 ### Environment ###
 .env
 !.env.template
+
+### Local performance output ###
+performance/*.jtl
+performance/tokens.csv
+performance/report/
+.codex_tmp/
+
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
