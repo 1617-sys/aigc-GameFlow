@@ -35,5 +35,5 @@ minio:
   bucket-name: ${MINIO_BUCKET:aigc}
 
 comfyui:
-  enabled: ${COMFYUI_ENABLED:false}
+  enabled: ${COMFYUI_ENABLED:true}
   base-url: ${COMFYUI_LOCAL_BASE_URL:http://127.0.0.1:8000}
