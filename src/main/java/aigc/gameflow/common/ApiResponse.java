@@ -1,5 +1,6 @@
 package aigc.gameflow.common;
 
+/** 统一的 HTTP 接口响应包装，code 是业务展示码。 */
 public class ApiResponse<T> {
 
     private final int code;

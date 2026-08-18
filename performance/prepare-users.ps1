@@ -5,6 +5,7 @@ param(
     [string]$OutputFile = "performance/tokens.csv"
 )
 
+# 为压测批量注册账号、提高测试余额，并导出登录 Token。
 $ErrorActionPreference = "Stop"
 $runId = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $prefix = "load_${runId}_"

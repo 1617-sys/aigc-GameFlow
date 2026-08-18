@@ -14,6 +14,7 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+/** 将参数、业务和系统异常转换为统一的 HTTP 响应。 */
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {

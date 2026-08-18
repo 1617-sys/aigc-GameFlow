@@ -9,6 +9,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/** 创建图片生成任务时由客户端提交的参数。 */
 @Data
 @Builder
 @NoArgsConstructor

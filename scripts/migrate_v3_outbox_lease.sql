@@ -1,11 +1,13 @@
 USE game_flow;
 
+-- 增加消费者租约字段，用于识别执行者和恢复超时任务。
 ALTER TABLE gen_task
   ADD COLUMN worker_id varchar(64) DEFAULT NULL AFTER retry_count,
   ADD COLUMN lease_expire_time datetime DEFAULT NULL AFTER worker_id,
   ADD COLUMN last_heartbeat_time datetime DEFAULT NULL AFTER lease_expire_time,
   ADD KEY idx_status_lease_expire (status, lease_expire_time);
 
+-- 增加事务 Outbox，解决任务落库与 MQ 发送无法使用同一事务的问题。
 CREATE TABLE generation_outbox (
   id bigint NOT NULL AUTO_INCREMENT,
   event_id varchar(64) NOT NULL,

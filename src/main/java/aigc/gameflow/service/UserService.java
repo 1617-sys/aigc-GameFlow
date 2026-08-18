@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
+/** 用户注册和密码校验服务。 */
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -27,6 +28,7 @@ public class UserService {
         LocalDateTime now = LocalDateTime.now();
         SysUser user = new SysUser();
         user.setUsername(username);
+        // 数据库只保存 BCrypt 哈希，登录时通过 matches 验证原始密码。
         user.setPassword(passwordEncoder.encode(password));
         user.setBalance(10);
         user.setRole("USER");

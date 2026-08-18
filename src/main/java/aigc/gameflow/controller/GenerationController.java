@@ -26,6 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import java.util.List;
 
+/** 图片生成任务 REST 接口，负责参数接收和响应组装，业务规则交给 Service。 */
 @RestController
 @RequestMapping("/api/generation")
 public class GenerationController {
@@ -70,6 +71,7 @@ public class GenerationController {
     @GetMapping(value = "/jobs/{taskUuid}/image", produces = MediaType.IMAGE_PNG_VALUE)
     public ResponseEntity<StreamingResponseBody> getJobImage(@PathVariable String taskUuid) {
         GenTask task = taskService.getCurrentUserTask(taskUuid);
+        // 使用流式响应转发对象存储内容，避免把整张图片一次性读入 JVM 内存。
         StreamingResponseBody body = outputStream -> minioService.streamImage(task.getImageUrl(), outputStream);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noCache())

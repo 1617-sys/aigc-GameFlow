@@ -8,6 +8,9 @@ import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * RabbitMQ 拓扑配置：主队列失败后进入延迟重试队列，超过次数后由消费者送入死信队列。
+ */
 @Configuration
 public class RabbitConfig {
 
@@ -48,6 +51,7 @@ public class RabbitConfig {
 
     @Bean
     public Queue retryQueue() {
+        // 重试消息停留 10 秒后，通过死信交换机重新回到执行队列。
         return QueueBuilder.durable(RETRY_QUEUE)
                 .ttl(10_000)
                 .deadLetterExchange(GENERATION_EXCHANGE)

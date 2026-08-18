@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS game_flow DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE game_flow;
 
+-- 用户账户：余额通过条件 UPDATE 原子扣减。
 CREATE TABLE IF NOT EXISTS sys_user (
   id bigint NOT NULL AUTO_INCREMENT,
   username varchar(50) NOT NULL,
@@ -14,6 +15,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
   UNIQUE KEY uk_username (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 生成任务主表：唯一幂等键防止重复扣费，租约字段标识当前执行者。
 CREATE TABLE IF NOT EXISTS gen_task (
   id bigint NOT NULL AUTO_INCREMENT,
   task_uuid varchar(64) NOT NULL,
@@ -57,6 +59,7 @@ CREATE TABLE IF NOT EXISTS gen_task (
   KEY idx_external_run_id (external_run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 事务 Outbox：与任务在同一事务写入，由 Relay 异步投递到 RabbitMQ。
 CREATE TABLE IF NOT EXISTS generation_outbox (
   id bigint NOT NULL AUTO_INCREMENT,
   event_id varchar(64) NOT NULL,
@@ -79,6 +82,7 @@ CREATE TABLE IF NOT EXISTS generation_outbox (
   KEY idx_outbox_task_uuid (task_uuid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 生命周期事件表：用于展示任务轨迹和辅助排障。
 CREATE TABLE IF NOT EXISTS generation_event (
   id bigint NOT NULL AUTO_INCREMENT,
   task_uuid varchar(64) NOT NULL,

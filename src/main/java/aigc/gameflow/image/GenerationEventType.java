@@ -1,5 +1,6 @@
 package aigc.gameflow.image;
 
+/** 用于审计和排障的任务生命周期事件类型。 */
 public enum GenerationEventType {
     TASK_CREATED,
     TASK_QUEUED,

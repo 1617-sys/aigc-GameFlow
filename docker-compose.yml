@@ -1,16 +1,18 @@
+# 后端公共配置通过 YAML 锚点复用，下面启动两个应用实例验证竞争场景。
 x-app-common: &app-common
   build: .
   restart: unless-stopped
   env_file:
     - .env
   environment:
-    SERVER_PORT: 8080
+    APP_SERVER_PORT: 8080
     MYSQL_HOST: mysql
     REDIS_HOST: redis
     RABBITMQ_HOST: rabbitmq
     MINIO_ENDPOINT: http://minio:9000
-    DEFAULT_IMAGE_PROVIDER: MOCK
-    GENERATION_MOCK_ENABLED: "true"
+    DEFAULT_IMAGE_PROVIDER: ${DEFAULT_IMAGE_PROVIDER:-WANX}
+    GENERATION_MOCK_ENABLED: ${GENERATION_MOCK_ENABLED:-false}
+    COMFYUI_ENABLED: ${COMFYUI_ENABLED:-false}
   expose:
     - "8080"
   depends_on:
@@ -26,6 +28,7 @@ x-app-common: &app-common
     - "host.docker.internal:host-gateway"
 
 services:
+  # Nginx 同时提供前端静态文件，并把 API 负载均衡到两个后端实例。
   nginx:
     build:
       context: .
@@ -43,6 +46,7 @@ services:
   app-2:
     <<: *app-common
 
+  # MySQL 首次启动时自动执行 schema.sql 初始化表结构。
   mysql:
     image: mysql:8.0
     restart: unless-stopped

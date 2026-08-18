@@ -1,5 +1,6 @@
 package aigc.gameflow.image;
 
+/** 任务状态及其数据库整数编码。 */
 public enum GenerationStatus {
     PENDING(0),
     RUNNING(1),

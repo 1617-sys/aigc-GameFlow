@@ -28,6 +28,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 任务应用服务：负责查询、提交、重试和取消生成任务。
+ * 提交时把扣费、任务、事件和 Outbox 写入放在同一个数据库事务中。
+ */
 @Service
 @Slf4j
 public class TaskService {
@@ -79,6 +83,7 @@ public class TaskService {
     public GenTask getCurrentUserTask(String uuid) {
         Long userId = getCurrentUserId();
         String cacheKey = taskCacheKey(userId, uuid);
+        // 查询采用 Cache Aside：先读 Redis，未命中时回源 MySQL 并回填缓存。
         GenTask cachedTask = (GenTask) redisTemplate.opsForValue().get(cacheKey);
         if (cachedTask != null) {
             return cachedTask;
@@ -109,6 +114,7 @@ public class TaskService {
         List<String> cacheKeys = distinctUuids.stream()
                 .map(uuid -> taskCacheKey(userId, uuid))
                 .toList();
+        // 批量读取可减少逐个访问 Redis 产生的网络往返。
         List<Object> cachedValues = redisTemplate.opsForValue().multiGet(cacheKeys);
 
         Map<String, GenTask> tasksByUuid = new HashMap<>();
@@ -151,9 +157,11 @@ public class TaskService {
             return cachedResult;
         }
 
+        // 先做用户级限流和系统级背压，避免系统过载时继续创建任务。
         submissionRateLimiter.check(userId);
         queueBackpressureGuard.checkAcceptingNewTasks();
         String lockKey = "idempotency:lock:" + userId + ":" + DigestUtil.sha256Hex(normalizedKey);
+        // 短锁只用于合并并发提交；最终幂等性仍由 MySQL 唯一索引保证。
         Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 10, TimeUnit.SECONDS);
         if (!Boolean.TRUE.equals(acquired)) {
             return waitForIdempotentResult(userId, normalizedKey, requestHash);
@@ -168,6 +176,7 @@ public class TaskService {
 
             GenTask created;
             try {
+                // TransactionTemplate 明确划定扣费和任务落库的原子事务边界。
                 created = transactionTemplate.execute(status -> createTaskInTransaction(
                         userId, normalizedKey, requestHash, request
                 ));
@@ -184,6 +193,7 @@ public class TaskService {
                 throw new IllegalStateException("Generation task transaction returned no result");
             }
 
+            // 缓存属于事务后的加速手段，不参与数据库一致性保证。
             cacheTask(created);
             cacheIdempotencyResult(created, normalizedKey);
             log.info("Generation task submitted, taskUuid={}, traceId={}",
@@ -203,7 +213,8 @@ public class TaskService {
                     GenerationStatus.FAILED.code(),
                     GenerationStatus.RETRYING.code(),
                     null,
-                    task.getRetryCount() == null ? 0 : task.getRetryCount()
+                    task.getRetryCount() == null ? 0 : task.getRetryCount(),
+                    LocalDateTime.now()
             );
             if (updated != 1) {
                 throw new ConflictException("Only failed tasks can be retried");
@@ -235,7 +246,8 @@ public class TaskService {
                 currentStatus,
                 GenerationStatus.CANCELED.code(),
                 "Task canceled by user",
-                task.getRetryCount() == null ? 0 : task.getRetryCount()
+                task.getRetryCount() == null ? 0 : task.getRetryCount(),
+                LocalDateTime.now()
         );
         if (updated != 1) {
             throw new ConflictException("Task status changed, cancel request rejected");
@@ -259,6 +271,7 @@ public class TaskService {
             return existing;
         }
 
+        // 条件更新余额，更新失败代表用户不存在或余额不足。
         if (sysUserMapper.debitBalance(userId) != 1) {
             throw new IllegalArgumentException("Insufficient balance");
         }
@@ -286,14 +299,17 @@ public class TaskService {
                 .updateTime(now)
                 .build();
 
+        // 以下三项与扣费处于同一事务：任何一步失败都会整体回滚。
         genTaskMapper.insert(task);
         generationEventService.record(task, GenerationEventType.TASK_CREATED,
                 "Generation task created");
+        // 事务内只写 Outbox，不直接发送 MQ，避免数据库成功但消息丢失。
         generationOutboxService.enqueueExecution(task);
         return task;
     }
 
     private String waitForIdempotentResult(Long userId, String key, String requestHash) {
+        // 未获得短锁时短暂轮询已有请求的结果，避免重复创建任务。
         for (int i = 0; i < 40; i++) {
             String cachedResult = readCachedIdempotencyResult(userId, key, requestHash);
             if (cachedResult != null) {

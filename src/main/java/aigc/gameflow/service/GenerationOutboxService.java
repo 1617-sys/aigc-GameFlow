@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+/** 创建和维护 Outbox 记录，具体消息发送由 OutboxRelayService 完成。 */
 @Service
 public class GenerationOutboxService {
 
@@ -43,6 +44,7 @@ public class GenerationOutboxService {
     }
 
     public List<GenerationOutbox> findDue(int batchSize) {
+        // 同时取待发送事件和锁已过期事件，保证 Relay 崩溃后可以恢复。
         return generationOutboxMapper.selectList(
                 new QueryWrapper<GenerationOutbox>()
                         .and(wrapper -> wrapper
@@ -58,11 +60,11 @@ public class GenerationOutboxService {
     }
 
     public boolean claim(String eventId, String workerId, LocalDateTime lockedUntil) {
-        return generationOutboxMapper.claim(eventId, workerId, lockedUntil) == 1;
+        return generationOutboxMapper.claim(eventId, workerId, lockedUntil, LocalDateTime.now()) == 1;
     }
 
     public boolean markSent(String eventId, String workerId) {
-        return generationOutboxMapper.markSent(eventId, workerId) == 1;
+        return generationOutboxMapper.markSent(eventId, workerId, LocalDateTime.now()) == 1;
     }
 
     public boolean scheduleRetry(
@@ -75,7 +77,8 @@ public class GenerationOutboxService {
                 eventId,
                 workerId,
                 nextAttemptTime,
-                truncate(lastError)
+                truncate(lastError),
+                LocalDateTime.now()
         ) == 1;
     }
 

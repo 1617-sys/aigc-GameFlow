@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** 用户注册与登录接口。 */
 @RestController
 @RequestMapping("/user")
 public class UserController {

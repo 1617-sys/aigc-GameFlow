@@ -3,29 +3,32 @@ package aigc.gameflow.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
 import java.util.Map;
 
+/** 封装 ComfyUI 的任务提交、状态查询和图片访问接口。 */
 @Service
 @Slf4j
 public class ComfyUiService {
 
-    @Autowired
-    private RestTemplate restTemplate;
+    private final RestClient restClient;
+    private final String comfyUiUrl;
 
-    @Value("${comfyui.base-url}")
-    private String comfyUiUrl;
+    public ComfyUiService(
+            @Qualifier("comfyUiRestClient") RestClient restClient,
+            @Value("${comfyui.base-url}") String comfyUiUrl
+    ) {
+        this.restClient = restClient;
+        this.comfyUiUrl = comfyUiUrl;
+    }
 
-    // Java 现在只需要调 Python,不需要解析任何 ComfyUI JSON
+    // 可选的 Python 门面入口；当前主链路由 GameAssetService 直接调用 postTask。
     public String callPythonFacade(String englishPrompt, long seed) {
         String pythonUrl = comfyUiUrl + "/api/v1/generate";
 
@@ -33,22 +36,24 @@ public class ComfyUiService {
         body.put("prompt", englishPrompt);
         body.put("seed", seed);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-
-        ResponseEntity<String> response = restTemplate.postForEntity(pythonUrl, entity, String.class);
-        JSONObject res = JSON.parseObject(response.getBody());
+        String responseBody = restClient.post()
+                .uri(pythonUrl)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(String.class);
+        JSONObject res = JSON.parseObject(responseBody);
         return res.getString("prompt_id");
     }
 
     public String postTask(String promptJson) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<String> entity = new HttpEntity<>(promptJson, headers);
-
-        ResponseEntity<String> response = restTemplate.postForEntity(comfyUiUrl + "/prompt", entity, String.class);
-        JSONObject result = JSON.parseObject(response.getBody());
+        String responseBody = restClient.post()
+                .uri(comfyUiUrl + "/prompt")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(promptJson)
+                .retrieve()
+                .body(String.class);
+        JSONObject result = JSON.parseObject(responseBody);
         String promptId = result.getString("prompt_id");
 
         if (promptId == null || promptId.isBlank()) {
@@ -66,8 +71,12 @@ public class ComfyUiService {
         String url = comfyUiUrl + "/history/" + promptId;
 
         try {
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-            JSONObject json = JSON.parseObject(response.getBody());
+            // ComfyUI 未完成时 history 中可能还没有当前任务或 outputs，此时返回 null 继续轮询。
+            String responseBody = restClient.get()
+                    .uri(url)
+                    .retrieve()
+                    .body(String.class);
+            JSONObject json = JSON.parseObject(responseBody);
             JSONObject taskData = json.getJSONObject(promptId);
 
             if(taskData == null){

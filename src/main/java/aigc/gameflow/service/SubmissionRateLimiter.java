@@ -9,9 +9,11 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 
+/** 使用 Redis Lua 在一秒窗口内同时执行用户级和全局提交限流。 */
 @Service
 public class SubmissionRateLimiter {
 
+    // Lua 脚本在 Redis 内原子执行，避免计数与过期时间分开设置造成竞态。
     private static final DefaultRedisScript<Long> LIMIT_SCRIPT = new DefaultRedisScript<>("""
             local userCount = redis.call('INCR', KEYS[1])
             if userCount == 1 then redis.call('EXPIRE', KEYS[1], ARGV[3]) end

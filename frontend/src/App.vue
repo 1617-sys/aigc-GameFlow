@@ -16,10 +16,10 @@ const authMode = ref('login')
 const auth = reactive({ username: '', password: '' })
 const user = reactive({ userId: null, balance: null })
 const form = reactive({
-  prompt: '', negativePrompt: '', preferredProvider: 'MOCK', size: '1024x1024'
+  prompt: '', negativePrompt: '', preferredProvider: 'WANX', size: '1024x1024'
 })
 const tasks = ref([])
-const providers = ref(['MOCK'])
+const providers = ref([])
 const images = reactive({})
 const events = ref([])
 const selectedTask = ref(null)
@@ -29,8 +29,10 @@ const message = ref('')
 const error = ref('')
 let pollTimer
 
+// 统计值从任务列表派生，不额外维护容易失真的重复状态。
 const activeCount = computed(() => tasks.value.filter(t => [0, 1, 5].includes(t.status)).length)
 const successCount = computed(() => tasks.value.filter(t => t.status === 2).length)
+const generatedTasks = computed(() => tasks.value.filter(t => t.status === 2))
 
 function notify(text, isError = false) {
   message.value = isError ? '' : text
@@ -67,10 +69,11 @@ async function authenticate() {
 async function loadDashboard(silent = false) {
   if (!silent) refreshing.value = true
   try {
+    // 任务和 Provider 互不依赖，并行请求可缩短控制台加载时间。
     const [taskData, providerData] = await Promise.all([api.tasks(), api.providers()])
     tasks.value = taskData || []
-    providers.value = providerData?.length ? providerData : ['MOCK']
-    if (!providers.value.includes(form.preferredProvider)) form.preferredProvider = providers.value[0]
+    providers.value = providerData || []
+    if (!providers.value.includes(form.preferredProvider)) form.preferredProvider = providers.value[0] || ''
     await loadFinishedImages()
   } catch (e) {
     if (!session.token()) logout()
@@ -89,6 +92,7 @@ async function loadFinishedImages() {
 }
 
 async function refreshActiveTasks() {
+  // 轮询时只批量查询未结束任务，减少接口请求和数据库读取量。
   const activeTasks = tasks.value.filter(task => [0, 1, 5].includes(task.status))
   if (!activeTasks.length) return
   try {
@@ -103,8 +107,10 @@ async function refreshActiveTasks() {
 
 async function submitTask() {
   if (!form.prompt.trim()) return notify('请先填写画面描述', true)
+  if (!form.preferredProvider) return notify('当前没有可用的图片生成服务，请检查后端配置', true)
   loading.value = true
   try {
+    // UUID 作为本次提交的幂等键，防止按钮重试造成重复任务和重复扣费。
     const key = crypto.randomUUID()
     await api.submit({
       prompt: form.prompt.trim(),
@@ -171,6 +177,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // 页面销毁时清理定时器和 Blob URL，避免浏览器资源泄漏。
   window.clearInterval(pollTimer)
   Object.values(images).forEach(URL.revokeObjectURL)
 })
@@ -229,8 +236,8 @@ onBeforeUnmount(() => {
             <label>生成服务<select v-model="form.preferredProvider"><option v-for="item in providers" :key="item">{{ item }}</option></select></label>
             <label>图片尺寸<select v-model="form.size"><option>1024x1024</option><option>1024x768</option><option>768x1024</option></select></label>
           </div>
-          <button class="primary wide" :disabled="loading"><span>{{ loading ? '正在提交…' : '提交到任务队列' }}</span><b>→</b></button>
-          <p class="form-hint">每次提交生成独立幂等键；Docker 默认使用免费 Mock Provider。</p>
+          <button class="primary wide" :disabled="loading || !providers.length"><span>{{ loading ? '正在提交…' : providers.length ? '提交到任务队列' : '没有可用的生成服务' }}</span><b>→</b></button>
+          <p class="form-hint">服务列表只显示当前已配置的 Provider；本地可同时启用 Mock 与万相。</p>
         </form>
 
         <section class="panel task-panel">
@@ -257,6 +264,28 @@ onBeforeUnmount(() => {
             </article>
           </div>
         </section>
+      </section>
+
+      <section class="panel gallery-panel">
+        <div class="panel-title">
+          <div><p class="eyebrow">GENERATED ASSETS</p><h2>生成图库</h2></div>
+          <span class="storage-note">MySQL 元数据 · MinIO 原图</span>
+        </div>
+        <p class="gallery-help">这里展示当前账户已成功生成的图片。任务、提示词和存储地址记录在 <code>gen_task</code>，图片文件保存在 MinIO。</p>
+        <div v-if="!generatedTasks.length" class="empty gallery-empty"><div>▧</div><h3>图库暂时为空</h3><p>成功完成的图片会自动出现在这里。</p></div>
+        <div v-else class="gallery-grid">
+          <article v-for="task in generatedTasks" :key="`asset-${task.taskUuid}`" class="asset-card">
+            <div class="asset-preview">
+              <img v-if="images[task.taskUuid]" :src="images[task.taskUuid]" :alt="task.prompt">
+              <span v-else class="loader"></span>
+            </div>
+            <div class="asset-meta">
+              <h3>{{ task.prompt }}</h3>
+              <p><span>{{ task.provider }}</span><span>{{ task.size || '默认尺寸' }}</span><time>{{ formatTime(task.updateTime) }}</time></p>
+              <a v-if="images[task.taskUuid]" class="text-button asset-download" :href="images[task.taskUuid]" :download="`${task.taskUuid}.png`">下载原图</a>
+            </div>
+          </article>
+        </div>
       </section>
     </main>
 

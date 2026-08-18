@@ -19,6 +19,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Outbox 中继器：定时把已提交到 MySQL 的待发送事件可靠地投递到 RabbitMQ。
+ */
 @Service
 @Slf4j
 public class OutboxRelayService {
@@ -61,6 +64,7 @@ public class OutboxRelayService {
             fixedDelayString = "${generation.outbox.fixed-delay-ms:500}"
     )
     public void relayScheduled() {
+        // 该方法由 Spring 调度线程触发，不在用户提交请求的 Web 线程中执行。
         if (relayEnabled) {
             publishBatch();
         }
@@ -70,6 +74,7 @@ public class OutboxRelayService {
         List<GenerationOutbox> dueEvents = outboxService.findDue(batchSize);
         int sent = 0;
         for (GenerationOutbox event : dueEvents) {
+            // 先领取带过期时间的记录，支持多实例 Relay 竞争且避免永久锁死。
             if (!outboxService.claim(
                     event.getEventId(),
                     relayWorkerId,
@@ -80,6 +85,7 @@ public class OutboxRelayService {
 
             try {
                 publish(event);
+                // 收到 Broker Confirm 后才标记 SENT；失败记录会按退避时间再次扫描。
                 if (outboxService.markSent(event.getEventId(), relayWorkerId)) {
                     sent++;
                     GenTask task = findTask(event.getTaskUuid());
@@ -106,6 +112,7 @@ public class OutboxRelayService {
             throw new IllegalArgumentException("Unsupported outbox event type: " + event.getEventType());
         }
 
+        // eventId 同时作为 Confirm 关联标识和消息 ID，便于排查重复投递。
         CorrelationData correlationData = new CorrelationData(event.getEventId());
         rabbitTemplate.convertAndSend(
                 RabbitConfig.GENERATION_EXCHANGE,

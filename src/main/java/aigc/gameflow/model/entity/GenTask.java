@@ -13,6 +13,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** 图片生成任务实体，包含请求、执行租约、结果和回调信息。 */
 @Data
 @Builder
 @NoArgsConstructor

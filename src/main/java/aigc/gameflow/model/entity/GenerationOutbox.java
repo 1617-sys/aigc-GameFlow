@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** 待投递消息实体，对应事务 Outbox 表。 */
 @Data
 @Builder
 @NoArgsConstructor

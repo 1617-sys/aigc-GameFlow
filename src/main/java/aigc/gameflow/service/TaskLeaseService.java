@@ -15,6 +15,9 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * 任务租约服务：用数据库条件更新分配执行权，并通过独立线程定期续租。
+ */
 @Service
 @Slf4j
 public class TaskLeaseService {
@@ -43,10 +46,13 @@ public class TaskLeaseService {
     }
 
     public boolean claim(String taskUuid, String workerId) {
+        LocalDateTime now = LocalDateTime.now();
+        // 只有待执行状态，或已过期的 RUNNING 任务，才能被当前 worker 领取。
         return genTaskMapper.claimForExecution(
                 taskUuid,
                 workerId,
-                LocalDateTime.now().plusSeconds(leaseSeconds),
+                now.plusSeconds(leaseSeconds),
+                now,
                 GenerationStatus.RUNNING.code(),
                 GenerationStatus.PENDING.code(),
                 GenerationStatus.RETRYING.code()
@@ -54,6 +60,7 @@ public class TaskLeaseService {
     }
 
     public LeaseHeartbeat startHeartbeat(String taskUuid, String workerId) {
+        // 返回可关闭句柄，让调用方用 try-with-resources 管理心跳生命周期。
         ScheduledFuture<?> future = heartbeatExecutor.scheduleAtFixedRate(
                 () -> renew(taskUuid, workerId),
                 heartbeatSeconds,
@@ -65,12 +72,15 @@ public class TaskLeaseService {
 
     private void renew(String taskUuid, String workerId) {
         try {
+            LocalDateTime now = LocalDateTime.now();
             int updated = genTaskMapper.renewLease(
                     taskUuid,
                     workerId,
                     GenerationStatus.RUNNING.code(),
-                    LocalDateTime.now().plusSeconds(leaseSeconds)
+                    now.plusSeconds(leaseSeconds),
+                    now
             );
+            // workerId 和 RUNNING 状态不匹配时续租失败，说明执行权已经转移。
             if (updated != 1) {
                 log.info("Task lease heartbeat stopped because ownership changed, taskUuid={}, workerId={}",
                         taskUuid, workerId);

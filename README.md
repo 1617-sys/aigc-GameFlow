@@ -4,7 +4,9 @@
 
 项目包含一个 Vue 3 任务控制台和一个 Java 21 后端。用户提交提示词后立即获得任务编号，后台 Worker 调用 Mock、ComfyUI 或阿里云百炼万相生成图片，将结果统一保存到 MinIO，客户端通过任务接口查询进度和结果。
 
-> 本项目重点展示异步任务系统的工程实现，不提供未经固定环境验证的 QPS、P95 或生产规模数据。Docker Compose 默认使用免费 Mock Provider，不会调用付费生图接口。
+项目问题、根因、修复和验证统一记录在 [`docs/ISSUE_LOG.md`](docs/ISSUE_LOG.md)，后续新故障请继续追加到该文档。
+
+> 本项目重点展示异步任务系统的工程实现，不提供未经固定环境验证的 QPS、P95 或生产规模数据。默认 Provider 为阿里云百炼万相，启动前需要在本地 `.env` 配置 `DASHSCOPE_API_KEY`，调用可能产生费用。
 
 ## 核心能力
 
@@ -311,8 +313,8 @@ docker compose up -d --build
 | 服务 | 地址 | 默认账号 |
 | --- | --- | --- |
 | Web 控制台与 API | `http://localhost:8080` | 注册后登录 |
-| RabbitMQ 管理台 | `http://localhost:15672` | `guest / guest` |
-| MinIO 控制台 | `http://localhost:9001` | `minioadmin / minioadmin` |
+| RabbitMQ 管理台 | `http://localhost:15673` | `guest / guest` |
+| MinIO 控制台 | `http://localhost:9101` | `minioadmin / minioadmin` |
 
 查看服务状态和日志：
 
@@ -329,17 +331,32 @@ docker compose down
 
 > `docker compose down -v` 会删除 MySQL 和 MinIO 数据卷，请确认不需要本地数据后再执行。
 
-Docker Compose 会强制启用 `MOCK` Provider。Mock 默认等待 1 秒并返回一张 1 像素 PNG，用于验证完整任务链路。
+Docker Compose 默认使用 `WANX` Provider。启动前必须在 `.env` 中填写有效的 `DASHSCOPE_API_KEY`；如果只想验证任务链路，可以改为 `DEFAULT_IMAGE_PROVIDER=MOCK` 和 `GENERATION_MOCK_ENABLED=true`。Mock 默认等待 1 秒并返回一张 1 像素 PNG。
 
-### 方式二：中间件使用 Docker，后端在宿主机启动
+### 方式二：中间件使用 Docker，后端在 IDEA 或宿主机启动（推荐开发方式）
 
 ```powershell
 Copy-Item .env.template .env
 docker compose up -d mysql redis rabbitmq minio
+$env:SPRING_PROFILES_ACTIVE="local"
+$env:DASHSCOPE_API_KEY="<your-api-key>"
 mvn spring-boot:run
 ```
 
-宿主机启动时，`application.yml` 默认连接 `localhost`。如果 8080 已被 Compose 的 Nginx 占用，请先停止 Nginx 和应用容器，或通过 `SERVER_PORT` 修改端口。
+`local` Profile 的后端端口为 `8081`，并从 [`application-local.yml`](src/main/resources/application-local.yml) 读取宿主机基础设施端口：MySQL `3307`、Redis `6380`、RabbitMQ `5673`、MinIO `9100`。这些端口对应 Docker 容器内部的标准端口，不会占用本机已有的同类服务。该 Profile 默认启用 Mock；即使 `.env` 中的 `MINIO_ENDPOINT` 使用 Docker 服务名，后端也会通过 `MINIO_LOCAL_ENDPOINT` 连接宿主机暴露端口。完整 Docker Compose 环境仍由 Nginx 在 `8080` 对外提供服务。
+
+在 IDEA 的 `Run → Edit Configurations → Environment variables` 中至少配置：
+
+```text
+SPRING_PROFILES_ACTIVE=local
+DASHSCOPE_API_KEY=<your-api-key>
+```
+
+如果之前启动过完整 Compose 环境，先停止会占用 8080 或共同消费任务的应用容器：
+
+```powershell
+docker compose stop nginx app-1 app-2
+```
 
 ### 前端开发模式
 
@@ -349,15 +366,17 @@ npm install
 npm run dev
 ```
 
-Vite 默认运行在 `http://localhost:5173`，并把 `/user` 与 `/api` 代理到 `http://localhost:8080`。
+Vite 默认运行在 `http://localhost:5173`，并把 `/user` 与 `/api` 代理到本地 Spring Boot 的 `http://localhost:8081`。Docker/Nginx 环境仍使用 `http://localhost:8080`。
 
 ### 切换图片 Provider
 
-- `MOCK`：设置 `GENERATION_MOCK_ENABLED=true`，适合本地演示和故障模拟。
-- `WANX`：设置 `DASHSCOPE_API_KEY` 和 `DEFAULT_IMAGE_PROVIDER=WANX`。
-- `COMFYUI`：启动兼容当前工作流的 ComfyUI，并设置 `COMFYUI_BASE_URL` 和 `DEFAULT_IMAGE_PROVIDER=COMFYUI`。
+- `WANX`：默认选项，需要设置 `DASHSCOPE_API_KEY`，默认模型为 `wan2.7-image-pro`。该模型不接收独立的反向提示词，服务端会把“排除内容”转换为正向提示词中的限制语句。
+- `MOCK`：`local` Profile 默认启用；Docker 环境需设置 `DEFAULT_IMAGE_PROVIDER=MOCK` 和 `GENERATION_MOCK_ENABLED=true`，适合本地演示和故障模拟。
+- `COMFYUI`：启动兼容当前工作流的 ComfyUI，并设置 `COMFYUI_ENABLED=true`、`COMFYUI_BASE_URL` 和 `DEFAULT_IMAGE_PROVIDER=COMFYUI`。
 
-如果指定 Provider 不支持当前请求，路由器会选择第一个可用 Provider；这不是带熔断或健康检查的自动故障转移。
+`GET /api/generation/providers` 只返回当前已配置的 Provider。请求显式指定 `preferredProvider` 时严格使用该 Provider；如果它未启用或缺少凭据，任务会返回明确错误，不会静默切换到其他服务。
+
+控制台的“生成图库”读取当前用户成功任务：任务元数据与 MinIO 对象地址保存在 MySQL `gen_task` 表，原始图片文件保存在 MinIO `aigc` Bucket。浏览器通过受 JWT 保护的 `/api/generation/jobs/{taskUuid}/image` 接口读取图片，不直接访问数据库或 MinIO 内网地址。
 
 ## API 示例
 
@@ -510,11 +529,11 @@ mysql -u root -p < scripts/migrate_v3_outbox_lease.sql
 mvn test
 ```
 
-当前仓库包含 15 个测试方法：
+当前仓库包含 16 个测试方法：
 
 | 类型 | 数量 | 场景 |
 | --- | ---: | --- |
-| 单元测试 | 10 | 请求哈希、Redis Lua 调用结果、队列积压保护、Mock Provider 成功与失败 |
+| 单元测试 | 11 | 请求哈希、Redis Lua 调用结果、队列积压保护、Mock Provider，以及万相 2.7 请求和响应解析 |
 | Testcontainers 集成测试 | 5 | 8 线程同键提交、任务与 Outbox 事务、Outbox 投递、租约过期恢复、重试上限、RabbitMQ 中断 |
 
 Testcontainers 使用真实 MySQL、Redis 和 RabbitMQ 容器。测试类配置了 `disabledWithoutDocker = true`，Docker 不可用时这 5 个集成测试会显示为跳过，而不是失败。
