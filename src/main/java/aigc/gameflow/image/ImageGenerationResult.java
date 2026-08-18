@@ -3,6 +3,7 @@ package aigc.gameflow.image;
 import lombok.Builder;
 import lombok.Data;
 
+/** 不同 Provider 返回结果的统一模型。 */
 @Data
 @Builder
 public class ImageGenerationResult {

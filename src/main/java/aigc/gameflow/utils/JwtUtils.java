@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
+/** JWT 的签发、验签和用户 ID 提取工具。 */
 public class JwtUtils {
 
     // 密钥 (实际开发中应该放在 yml 配置文件里，这里为了演示写死)

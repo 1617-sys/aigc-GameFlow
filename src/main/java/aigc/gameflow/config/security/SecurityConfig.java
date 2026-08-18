@@ -18,12 +18,13 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
+/** 无状态 JWT 安全配置，同时提供 BCrypt 密码编码器和跨域规则。 */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     @Autowired
-    private JwtAuthenticationFilter jwtAuthenticationFilter; // 注入你刚才写的过滤器
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     /**
      * 1. 密码加密器
@@ -38,10 +39,6 @@ public class SecurityConfig {
      * 2. 核心安全过滤链 (SecurityFilterChain)
      * 这里定义了：谁能进，谁不能进，怎么进
      */
-
-
-// ... (其他代码)
-
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -56,7 +53,8 @@ public class SecurityConfig {
 
                 // 4. 配置授权规则
                 .authorizeHttpRequests(auth -> auth
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        // 首次图片请求已校验身份和任务归属，放行容器后续的异步分派。
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
 
                         // 放行登录和注册
                         .requestMatchers("/user/login", "/user/register").permitAll()

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/** 记录并查询任务生命周期事件。事件记录失败不会中断主业务。 */
 @Slf4j
 @Service
 public class GenerationEventService {
@@ -31,6 +32,7 @@ public class GenerationEventService {
             return;
         }
 
+        // 审计事件属于辅助信息，因此采用 best effort，失败只记日志。
         try {
             generationEventMapper.insert(GenerationEvent.builder()
                     .taskUuid(task.getTaskUuid())

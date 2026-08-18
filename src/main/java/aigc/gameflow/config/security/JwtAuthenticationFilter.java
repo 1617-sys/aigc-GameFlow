@@ -14,6 +14,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+/** 从 Bearer Token 中恢复用户身份，并写入 Spring Security 上下文。 */
 @Component
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -41,10 +42,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
 
-        // 1. 获取 Header
+        // 读取并校验约定的 Bearer Token。
         String authHeader = request.getHeader("Authorization");
 
-        // 2. 校验格式 "Bearer xxxxx"
         if (!StringUtils.hasText(authHeader) || !authHeader.startsWith("Bearer ")) {
             // 如果没有 Token，直接放行 (让 Spring Security 去处理认证)
             chain.doFilter(request, response);
@@ -58,6 +58,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         Long userId = JwtUtils.getUserId(token);
+        // TaskService 后续从 principal 中取得当前用户 ID，用于数据权限隔离。
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(userId, null, null);
         SecurityContextHolder.getContext().setAuthentication(authentication);

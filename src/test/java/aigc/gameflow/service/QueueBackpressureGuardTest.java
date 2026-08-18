@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
+/** 验证积压阈值、Broker 不可用和关闭开关三种背压分支。 */
 class QueueBackpressureGuardTest {
 
     @Test

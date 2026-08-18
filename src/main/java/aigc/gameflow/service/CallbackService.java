@@ -4,26 +4,29 @@ import aigc.gameflow.image.GenerationEventType;
 import aigc.gameflow.mapper.GenTaskMapper;
 import aigc.gameflow.model.entity.GenTask;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
 import java.util.Map;
 
+/** 任务结束后向调用方提供的 callbackUrl 推送结果，并记录回调状态。 */
 @Slf4j
 @Service
 public class CallbackService {
 
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
     private final GenTaskMapper genTaskMapper;
     private final GenerationEventService generationEventService;
 
     public CallbackService(
-            RestTemplate restTemplate,
+            @Qualifier("callbackRestClient") RestClient restClient,
             GenTaskMapper genTaskMapper,
             GenerationEventService generationEventService
     ) {
-        this.restTemplate = restTemplate;
+        this.restClient = restClient;
         this.genTaskMapper = genTaskMapper;
         this.generationEventService = generationEventService;
     }
@@ -44,8 +47,14 @@ public class CallbackService {
         payload.put("errorMsg", task.getErrorMsg());
         payload.put("traceId", task.getTraceId());
 
+        // 回调失败不会回滚已完成的生成任务，只记录失败供后续排查。
         try {
-            restTemplate.postForEntity(task.getCallbackUrl(), payload, String.class);
+            restClient.post()
+                    .uri(task.getCallbackUrl())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .toBodilessEntity();
             task.setCallbackStatus("SUCCESS");
             task.setCallbackError(null);
             genTaskMapper.updateById(task);

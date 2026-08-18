@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.Base64;
 
+/** 串联 Provider 路由、图片生成和 MinIO 持久化。 */
 @Service
 public class ImageGenerationService {
 
@@ -33,6 +34,7 @@ public class ImageGenerationService {
     }
 
     public ImageGenerationResult generateAndStore(GenTask task) {
+        // 把数据库实体转换成与具体供应商无关的请求对象。
         ImageGenerationRequest request = ImageGenerationRequest.builder()
                 .taskUuid(task.getTaskUuid())
                 .prompt(task.getPrompt())
@@ -59,6 +61,7 @@ public class ImageGenerationService {
 
     private String storeResult(ImageGenerationResult result) {
         String filename = result.getOriginalFilename() == null ? "generated.png" : result.getOriginalFilename();
+        // 同时兼容返回 Base64 的本地 Provider 和返回临时 URL 的云 Provider。
         if (result.getImageBase64() != null && !result.getImageBase64().isBlank()) {
             byte[] bytes = Base64.getDecoder().decode(result.getImageBase64());
             return minioService.uploadImage(new ByteArrayInputStream(bytes), filename);

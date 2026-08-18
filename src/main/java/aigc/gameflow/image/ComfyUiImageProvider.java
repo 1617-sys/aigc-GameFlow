@@ -3,18 +3,26 @@ package aigc.gameflow.image;
 import aigc.gameflow.service.ComfyUiService;
 import aigc.gameflow.service.GameAssetService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+/** 本地 ComfyUI Provider：提交工作流任务并轮询生成结果。 */
 @Slf4j
 @Component
 public class ComfyUiImageProvider implements ImageGenerationProvider {
 
     private final GameAssetService gameAssetService;
     private final ComfyUiService comfyUiService;
+    private final boolean enabled;
 
-    public ComfyUiImageProvider(GameAssetService gameAssetService, ComfyUiService comfyUiService) {
+    public ComfyUiImageProvider(
+            GameAssetService gameAssetService,
+            ComfyUiService comfyUiService,
+            @Value("${comfyui.enabled:false}") boolean enabled
+    ) {
         this.gameAssetService = gameAssetService;
         this.comfyUiService = comfyUiService;
+        this.enabled = enabled;
     }
 
     @Override
@@ -24,7 +32,7 @@ public class ComfyUiImageProvider implements ImageGenerationProvider {
 
     @Override
     public boolean supports(ImageGenerationRequest request) {
-        return true;
+        return enabled;
     }
 
     @Override
@@ -45,6 +53,7 @@ public class ComfyUiImageProvider implements ImageGenerationProvider {
     }
 
     private String waitForImage(String promptId) {
+        // ComfyUI 是异步接口，这里以固定间隔查询历史记录，最长等待 5 分钟。
         long start = System.currentTimeMillis();
         while ((System.currentTimeMillis() - start) < 300_000) {
             String filename = comfyUiService.getImageFilename(promptId);

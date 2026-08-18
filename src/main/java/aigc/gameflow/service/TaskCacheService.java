@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+/** Redis 任务缓存，随机 TTL 用于减轻大量键同时过期造成的缓存雪崩。 */
 @Service
 public class TaskCacheService {
 

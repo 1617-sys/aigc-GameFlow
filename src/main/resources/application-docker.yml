@@ -1,3 +1,4 @@
+# Docker 网络内使用服务名访问基础设施。
 spring:
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:game_flow}?serverTimezone=GMT%2B8&useUnicode=true&characterEncoding=utf8
@@ -9,11 +10,14 @@ spring:
     redis:
       host: ${REDIS_HOST:redis}
 
+# 容器内客户端地址与持久化 URL 的访问入口。
 minio:
   endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+  client-endpoint: ${MINIO_ENDPOINT:http://minio:9000}
 
 generation:
-  default-provider: ${DEFAULT_IMAGE_PROVIDER:MOCK}
+  default-provider: ${DEFAULT_IMAGE_PROVIDER:WANX}
 
 comfyui:
+  enabled: ${COMFYUI_ENABLED:false}
   base-url: ${COMFYUI_BASE_URL:http://host.docker.internal:8000}

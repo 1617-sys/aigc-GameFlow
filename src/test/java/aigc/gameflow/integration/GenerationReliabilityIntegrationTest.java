@@ -51,6 +51,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * 使用真实 MySQL、Redis 和 RabbitMQ 容器验证幂等、Outbox 与租约恢复链路。
+ */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(properties = {
         "spring.sql.init.mode=always",

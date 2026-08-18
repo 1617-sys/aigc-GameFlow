@@ -14,6 +14,7 @@ import java.io.OutputStream;
 import java.net.URI;
 import java.util.UUID;
 
+/** 图片对象存储服务，负责上传和按受控对象路径流式读取。 */
 @Slf4j
 @Service
 public class MinioService {
@@ -50,7 +51,7 @@ public class MinioService {
             return url;
         } catch (Exception e) {
             log.error("MinIO upload failed", e);
-            throw new RuntimeException("Image upload service failed");
+            throw new IllegalStateException("Image upload service failed: " + e.getMessage(), e);
         }
     }
 
@@ -59,6 +60,7 @@ public class MinioService {
             throw new IllegalArgumentException("Task has no generated image");
         }
         try {
+            // 只允许读取当前 bucket 下的对象，避免把任意 URL 当作代理地址。
             String path = URI.create(imageUrl).getPath();
             String bucketPrefix = "/" + bucketName + "/";
             if (path == null || !path.startsWith(bucketPrefix)) {

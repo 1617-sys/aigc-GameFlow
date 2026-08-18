@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
+/** 测试用 Provider，可模拟延迟和随机失败，不调用真实模型服务。 */
 @Component
 public class MockImageProvider implements ImageGenerationProvider {
 

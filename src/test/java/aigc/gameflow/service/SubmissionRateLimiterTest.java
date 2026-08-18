@@ -14,6 +14,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/** 验证 Redis Lua 返回值到限流决策的映射。 */
 class SubmissionRateLimiterTest {
 
     @SuppressWarnings("unchecked")

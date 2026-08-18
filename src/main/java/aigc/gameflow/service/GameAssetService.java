@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ThreadLocalRandom;
 
+/** 读取并填充 ComfyUI 工作流模板，然后提交文生图任务。 */
 @Service
 @Slf4j
 public class GameAssetService {
@@ -26,6 +27,7 @@ public class GameAssetService {
 
         long randomSeed = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
 
+        // 用用户提示词和随机种子替换工作流模板中的占位符。
         String finalJson = json
                 .replace("${prompt}", normalizedPrompt)
                 .replace("\"${seed}\"", String.valueOf(randomSeed)) // 兼容 seed 是字符串的情况

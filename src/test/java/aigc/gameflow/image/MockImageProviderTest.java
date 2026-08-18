@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/** 验证 Mock Provider 的成功结果和可控失败。 */
 class MockImageProviderTest {
 
     @Test

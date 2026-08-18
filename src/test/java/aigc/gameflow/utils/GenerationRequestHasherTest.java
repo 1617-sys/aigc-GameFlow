@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
+/** 验证请求摘要的稳定性和参数变化敏感性。 */
 class GenerationRequestHasherTest {
 
     @Test

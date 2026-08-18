@@ -28,6 +28,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 生成任务消费者：领取数据库租约、执行图片生成，并根据结果 ACK、重试或进入死信队列。
+ */
 @Component
 @Slf4j
 public class TaskListener {
@@ -69,6 +72,7 @@ public class TaskListener {
 
         try {
             processTask(taskUuid, workerId);
+            // 只有处理流程正常结束后才确认消息，进程中途退出时 RabbitMQ 可重新投递。
             channel.basicAck(deliveryTag, false);
         } catch (Exception e) {
             GenTask runningTask = findTask(taskUuid);
@@ -120,6 +124,7 @@ public class TaskListener {
     }
 
     private void processTask(String taskUuid, String workerId) {
+        // 数据库条件更新相当于“抢占执行权”，防止重复消息被多个消费者同时执行。
         if (!taskLeaseService.claim(taskUuid, workerId)) {
             log.info("Task message skipped because task was already claimed or completed, taskUuid={}", taskUuid);
             return;
@@ -133,10 +138,12 @@ public class TaskListener {
         generationEventService.record(task, GenerationEventType.TASK_RUNNING, "Generation task started");
 
         ImageGenerationResult result;
+        // 图片生成可能耗时较长，心跳持续延长租约；try-with-resources 保证结束后停止心跳。
         try (TaskLeaseService.LeaseHeartbeat ignored = taskLeaseService.startHeartbeat(taskUuid, workerId)) {
             result = imageGenerationService.generateAndStore(task);
         }
 
+        // 成功结果必须仍由当前 worker 持有且租约未过期，迟到结果不能覆盖恢复后的状态。
         int completed = genTaskMapper.update(
                 null,
                 new LambdaUpdateWrapper<GenTask>()
@@ -184,7 +191,8 @@ public class TaskListener {
                 GenerationStatus.RUNNING.code(),
                 target.code(),
                 error,
-                retries
+                retries,
+                LocalDateTime.now()
         );
         if (updated != 1) {
             log.info("Task failure result ignored because status changed, taskUuid={}", taskUuid);

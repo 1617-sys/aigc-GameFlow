@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** 可审计的任务生命周期事件，对应 generation_event 表。 */
 @Data
 @Builder
 @NoArgsConstructor

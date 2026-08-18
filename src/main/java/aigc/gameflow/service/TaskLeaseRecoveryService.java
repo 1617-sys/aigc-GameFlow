@@ -15,6 +15,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * 租约恢复器：扫描心跳超时的 RUNNING 任务，将其重新排队或标记为最终失败。
+ */
 @Service
 @Slf4j
 public class TaskLeaseRecoveryService {
@@ -62,6 +65,7 @@ public class TaskLeaseRecoveryService {
     }
 
     public int recoverExpiredTasks() {
+        // 这里只筛选候选任务，真正恢复时还会再次使用 workerId 和过期时间做条件更新。
         List<GenTask> expired = genTaskMapper.selectList(
                 new QueryWrapper<GenTask>()
                         .eq("status", GenerationStatus.RUNNING.code())
@@ -73,6 +77,7 @@ public class TaskLeaseRecoveryService {
 
         int recovered = 0;
         for (GenTask candidate : expired) {
+            // 状态迁移、事件记录和重新写 Outbox 必须在同一事务内完成。
             RecoveryResult result = transactionTemplate.execute(status -> recoverOne(candidate));
             if (result == null || result.task() == null) {
                 continue;
@@ -95,13 +100,15 @@ public class TaskLeaseRecoveryService {
                 ? "Task lease expired and retry limit was reached"
                 : "Task lease expired; execution will be retried";
 
+        // 乐观条件更新失败表示任务已被心跳续租或被其他恢复线程处理。
         int updated = genTaskMapper.recoverExpiredLease(
                 candidate.getTaskUuid(),
                 candidate.getWorkerId(),
                 GenerationStatus.RUNNING.code(),
                 target.code(),
                 error,
-                nextRetryCount
+                nextRetryCount,
+                LocalDateTime.now()
         );
         if (updated != 1) {
             return null;

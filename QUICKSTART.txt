@@ -7,8 +7,15 @@ AIGC-GameFlow 快速启动
 5. POST http://localhost:8080/api/generation/jobs
    Header: Authorization: Bearer <JWT>
    Header: Idempotency-Key: 任意 8 至 128 字符唯一键
-   Body: {"prompt":"demo","preferredProvider":"MOCK"}
+   Body: {"prompt":"demo","preferredProvider":"WANX"}
 
-Compose 默认强制使用 Mock Provider，不消耗任何付费 API。
-RabbitMQ: http://localhost:15672
-MinIO: http://localhost:9001
+启动前请在 .env 中配置 DASHSCOPE_API_KEY。Compose 默认使用 wan2.7-image-pro，调用可能产生费用。
+RabbitMQ: http://localhost:15673
+MinIO: http://localhost:9101
+
+IDEA 开发模式：
+1. docker compose up -d mysql redis rabbitmq minio
+2. IDEA 环境变量设置 SPRING_PROFILES_ACTIVE=local 和 DASHSCOPE_API_KEY
+3. 运行 aigc.gameflow.Main
+4. 本地端口：MySQL 3307、Redis 6380、RabbitMQ 5673、MinIO 9100
+5. RabbitMQ 管理台：http://localhost:15673

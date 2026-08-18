@@ -21,6 +21,7 @@
         <testcontainers.version>1.20.4</testcontainers.version>
     </properties>
 
+    <!-- Web、安全、消息、缓存、数据库和对象存储运行时依赖。 -->
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -76,6 +77,7 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 测试依赖：单元测试以及真实基础设施的 Testcontainers 集成测试。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

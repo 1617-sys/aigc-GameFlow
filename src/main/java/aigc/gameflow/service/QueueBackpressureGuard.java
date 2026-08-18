@@ -12,6 +12,9 @@ import org.springframework.stereotype.Service;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * RabbitMQ 背压保护：后台定时采样队列积压，提交线程只读取内存快照。
+ */
 @Service
 @Slf4j
 public class QueueBackpressureGuard {
@@ -42,6 +45,7 @@ public class QueueBackpressureGuard {
             return;
         }
         try {
+            // 被动声明只读取已有队列状态，不会创建或修改队列。
             Long currentBacklog = rabbitTemplate.execute(channel -> {
                 AMQP.Queue.DeclareOk execute = channel.queueDeclarePassive(RabbitConfig.TASK_QUEUE);
                 AMQP.Queue.DeclareOk retry = channel.queueDeclarePassive(RabbitConfig.RETRY_QUEUE);
@@ -60,6 +64,7 @@ public class QueueBackpressureGuard {
     }
 
     public void checkAcceptingNewTasks() {
+        // 提交请求不直接访问 RabbitMQ，避免 Broker 波动拖慢所有 HTTP 请求。
         if (!enabled) {
             return;
         }
